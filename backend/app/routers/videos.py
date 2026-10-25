@@ -47,7 +47,9 @@ def mine(user: User = Depends(current_user), db: Session = Depends(get_db)):
 @videos_router.post("", response_model=s.VideoOut, status_code=201)
 def create_video(body: s.VideoCreate, user: User = Depends(creator_user), db: Session = Depends(get_db)):
     asset = get_asset_owned(db, body.asset_id, user, "video")
-    if db.scalar(select(Video).where(Video.asset_id == asset.id)):
+    from ..models import Episode
+
+    if db.scalar(select(Video).where(Video.asset_id == asset.id)) or db.scalar(select(Episode).where(Episode.asset_id == asset.id)):
         raise err(409, "asset_used", "That upload is already attached to a video.")
     v = Video(owner_id=user.id, asset_id=asset.id, title=body.title.strip(), description=body.description.strip(),
               category=body.category, status="pending")

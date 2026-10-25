@@ -122,9 +122,11 @@ def create_episode(body: s.EpisodeCreate, user: User = Depends(creator_user), db
     p = db.get(Podcast, body.podcast_id)
     if not p or p.owner_id != user.id:
         raise err(403 if p else 404, "forbidden" if p else "not_found", "Podcast not found or not yours.")
-    asset = get_asset_owned(db, body.asset_id, user, "audio")
-    if db.scalar(select(Episode).where(Episode.asset_id == asset.id)):
-        raise err(409, "asset_used", "That upload is already attached to an episode.")
+    asset = get_asset_owned(db, body.asset_id, user, ("audio", "video"))
+    from ..models import Video
+
+    if db.scalar(select(Episode).where(Episode.asset_id == asset.id)) or db.scalar(select(Video).where(Video.asset_id == asset.id)):
+        raise err(409, "asset_used", "That upload is already attached to an episode or video.")
     e = Episode(podcast_id=p.id, asset_id=asset.id, title=body.title.strip(), description=body.description.strip(), status="pending")
     db.add(e)
     db.flush()

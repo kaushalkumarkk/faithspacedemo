@@ -275,3 +275,17 @@ def test_pagination(client, admin, creator):
         client.post(f"/admin/moderation/video/{v['id']}/approve", headers=admin)
     p = client.get("/videos?page=2&page_size=2").json()
     assert p["total"] == 3 and len(p["items"]) == 1
+
+
+def test_video_episode_publish_and_play(client, creator, viewer, admin):
+    p = client.post("/podcasts", headers=creator, json={"title": "Video Show", "category": "Interfaith"}).json()
+    a = upload(client, creator, "video", "talk.webm", WEBM, "video/webm").json()
+    e = client.post("/episodes", headers=creator, json={"podcast_id": p["id"], "asset_id": a["id"], "title": "Video episode"})
+    assert e.status_code == 201 and e.json()["is_video"] is True
+    # the same upload cannot also become a feed video
+    assert client.post("/videos", headers=creator, json={"asset_id": a["id"], "title": "Dup", "category": "Music"}).status_code == 409
+    eid = e.json()["id"]
+    assert client.get(f"/episodes/{eid}", headers=viewer).status_code == 404  # pending
+    client.post(f"/admin/moderation/episode/{eid}/approve", headers=admin)
+    ep = client.get(f"/episodes/{eid}", headers=viewer).json()
+    assert ep["is_video"] and client.get(ep["audio_url"]).headers["content-type"] == "video/webm"

@@ -18,12 +18,12 @@ const VIDEO_TYPES = ["video/mp4", "video/webm"];
 const AUDIO_TYPES = ["audio/mpeg", "audio/mp3", "audio/mp4", "audio/x-m4a", "audio/m4a"];
 const MAX_VIDEO = 100, MAX_AUDIO = 60; // MB — mirrors backend defaults; the server is authoritative.
 
-function validate(file: File, kind: "video" | "audio"): string | null {
+function validate(file: File, kind: "video" | "audio" | "episode"): string | null {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-  const okExt = kind === "video" ? ["mp4", "webm"] : ["mp3", "m4a"];
-  const okType = kind === "video" ? VIDEO_TYPES : AUDIO_TYPES;
+  const okExt = kind === "video" ? ["mp4", "webm"] : kind === "audio" ? ["mp3", "m4a"] : ["mp3", "m4a", "mp4", "webm"];
+  const okType = kind === "video" ? VIDEO_TYPES : kind === "audio" ? AUDIO_TYPES : [...AUDIO_TYPES, ...VIDEO_TYPES];
   if (!okExt.includes(ext) || (file.type && !okType.includes(file.type))) return `Unsupported file. Allowed: ${okExt.map((e) => "." + e).join(", ")}.`;
-  if (file.size > (kind === "video" ? MAX_VIDEO : MAX_AUDIO) * 1048576) return `File is too large (${formatBytes(file.size)}). Limit is ${kind === "video" ? MAX_VIDEO : MAX_AUDIO} MB.`;
+  if (file.size > (kind === "audio" ? MAX_AUDIO : MAX_VIDEO) * 1048576) return `File is too large (${formatBytes(file.size)}). Limit is ${kind === "audio" ? MAX_AUDIO : MAX_VIDEO} MB.`;
   if (file.size === 0) return "That file is empty.";
   return null;
 }
@@ -181,6 +181,8 @@ function PodcastUpload() {
   const shows = useQuery({ queryKey: ["my-podcasts"], queryFn: () => api<Podcast[]>("/podcasts/mine") });
   const [audio, setAudio] = useState<File | null>(null);
   const [cover, setCover] = useState<File | null>(null);
+  const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [coverError, setCoverError] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [pct, setPct] = useState(0);
@@ -190,6 +192,7 @@ function PodcastUpload() {
   const { register, handleSubmit, watch, reset, formState: { errors } } = useForm<EpForm>({ resolver: zodResolver(epSchema), defaultValues: { podcast_id: "" } });
   const isNew = watch("podcast_id") === "new";
 
+  useEffect(() => { if (!cover) { setCoverUrl(null); return; } const u = URL.createObjectURL(cover); setCoverUrl(u); return () => URL.revokeObjectURL(u); }, [cover]);
   useEffect(() => { if (!audio) { setAudioUrl(null); return; } const u = URL.createObjectURL(audio); setAudioUrl(u); return () => URL.revokeObjectURL(u); }, [audio]);
 
   const submit = async (v: EpForm) => {
@@ -204,7 +207,8 @@ function PodcastUpload() {
         podcastId = p.id;
       }
       setPhase("uploading"); setPct(0);
-      const up = uploadFile("audio", audio, audio.name, setPct);
+      const isVid = /\.(mp4|webm)$/i.test(audio.name);
+      const up = uploadFile(isVid ? "video" : "audio", audio, audio.name, setPct);
       cancelRef.current = up.cancel;
       const asset = await up.promise;
       setPhase("saving");
@@ -235,13 +239,13 @@ function PodcastUpload() {
     <form onSubmit={handleSubmit(submit)} className="grid gap-6 lg:grid-cols-2" noValidate>
       <div className="space-y-3">
         {!audio ? (
-          <FileDrop accept=".mp3,.m4a,audio/mpeg,audio/mp4" label="Drag & drop an audio episode" hint={`MP3 or M4A · up to ${MAX_AUDIO} MB`} testId="audio-file-input"
-            onFile={(f) => { const e = validate(f, "audio"); setFileError(e); setAudio(e ? null : f); }} />
+          <FileDrop accept=".mp3,.m4a,.mp4,.webm,audio/mpeg,audio/mp4,video/mp4,video/webm" label="Drag & drop an episode (audio or video)" hint={`Audio: MP3 / M4A up to ${MAX_AUDIO} MB · Video: MP4 / WebM up to ${MAX_VIDEO} MB`} testId="audio-file-input"
+            onFile={(f) => { const e = validate(f, "episode"); setFileError(e); setAudio(e ? null : f); }} />
         ) : (
           <div className="space-y-2 rounded-2xl border border-line p-4">
             <div className="flex items-center gap-2"><Mic className="h-5 w-5 text-brand" /><div className="min-w-0 flex-1"><p className="truncate font-medium">{audio.name}</p><p className="text-xs text-muted">{formatBytes(audio.size)}</p></div>
               {!busy && <Button type="button" variant="ghost" size="icon" aria-label="Remove file" onClick={() => setAudio(null)}><X className="h-4 w-4" /></Button>}</div>
-            {audioUrl && <audio src={audioUrl} controls className="w-full" />}
+            {audioUrl && (/\.(mp4|webm)$/i.test(audio.name) ? <video src={audioUrl} controls playsInline className="aspect-video w-full rounded-lg bg-black" /> : <audio src={audioUrl} controls className="w-full" />)}
           </div>
         )}
         {fileError && <p role="alert" className="text-sm text-danger">{fileError}</p>}
@@ -260,7 +264,15 @@ function PodcastUpload() {
             <Field label="Podcast description"><Textarea {...register("show_description")} disabled={busy} /></Field>
             <Field label="Category" error={errors.show_category?.message}><Select {...register("show_category")} disabled={busy}><option value="">Select…</option>{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</Select></Field>
             <Field label="Cover image (optional)" hint="PNG, JPG or WebP up to 5 MB">
-              <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setCover(e.target.files?.[0] ?? null)} disabled={busy} className="text-sm" />
+              <div className="flex items-center gap-3">
+                {coverUrl && /* eslint-disable-next-line @next/next/no-img-element */ <img src={coverUrl} alt="Cover preview" className="h-16 w-16 rounded-lg object-cover" data-testid="cover-preview" />}
+                <input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} className="text-sm" data-testid="cover-input"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] ?? null;
+                    if (f && (!["image/png", "image/jpeg", "image/webp"].includes(f.type) || f.size > 5 * 1048576)) { setCoverError("Cover must be a PNG, JPG or WebP up to 5 MB."); setCover(null); } else { setCoverError(null); setCover(f); }
+                  }} />
+              </div>
+              {coverError && <p role="alert" className="mt-1 text-xs text-danger">{coverError}</p>}
             </Field>
           </div>
         )}

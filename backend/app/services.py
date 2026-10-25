@@ -59,20 +59,21 @@ def episode_out(db: Session, e: Episode) -> s.EpisodeOut:
     p = e.podcast
     return s.EpisodeOut(
         id=e.id, title=e.title, description=e.description, status=e.status, rejection_reason=e.rejection_reason,
-        audio_url=s.media_url(e.asset), mime_type=e.asset.mime_type, podcast_id=p.id, podcast_title=p.title,
+        audio_url=s.media_url(e.asset), mime_type=e.asset.mime_type, is_video=e.asset.kind == "video", podcast_id=p.id, podcast_title=p.title,
         category=p.category, cover_url=s.media_url(p.cover), owner=user_out(db, p.owner),
         created_at=e.created_at, published_at=e.published_at,
     )
 
 
-def get_asset_owned(db: Session, asset_id: int | None, user: User, kind: str) -> MediaAsset | None:
+def get_asset_owned(db: Session, asset_id: int | None, user: User, kind: str | tuple[str, ...]) -> MediaAsset | None:
     from .deps import err
 
     if asset_id is None:
         return None
     a = db.get(MediaAsset, asset_id)
-    if not a or a.kind != kind:
-        raise err(400, "bad_asset", f"asset_id {asset_id} is not a valid {kind} upload.")
+    kinds = (kind,) if isinstance(kind, str) else kind
+    if not a or a.kind not in kinds:
+        raise err(400, "bad_asset", f"asset_id {asset_id} is not a valid {'/'.join(kinds)} upload.")
     if a.owner_id != user.id and user.role != "admin":
         raise err(403, "forbidden", "You do not own that upload.")
     return a

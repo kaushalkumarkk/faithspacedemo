@@ -64,7 +64,7 @@ export function ModerationList({ type, initialStatus = "pending", filters = true
               </div>
               {open === key && (
                 <div className="mt-3 flex justify-center rounded-xl bg-black p-2">
-                  {it.type === "video"
+                  {it.type === "video" || it.mime_type.startsWith("video/")
                     ? <video src={mediaSrc(it.media_url, it.status === "approved" ? "pending" : it.status)} controls playsInline className="max-h-[420px] rounded-lg" data-testid="mod-preview" />
                     : <audio src={mediaSrc(it.media_url, "pending")} controls className="w-full" data-testid="mod-preview" />}
                 </div>

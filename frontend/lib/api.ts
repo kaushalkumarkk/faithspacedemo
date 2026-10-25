@@ -91,7 +91,7 @@ export interface Video {
 export interface Comment { id: number; video_id: number; parent_id: number | null; body: string; author: User; created_at: string; replies: Comment[] }
 export interface Podcast { id: number; title: string; description: string; category: string; cover_url: string | null; owner: User; episode_count: number; created_at: string }
 export interface Episode {
-  id: number; title: string; description: string; status: Status; rejection_reason: string | null; audio_url: string; mime_type: string;
+  id: number; title: string; description: string; status: Status; rejection_reason: string | null; audio_url: string; mime_type: string; is_video: boolean;
   podcast_id: number; podcast_title: string; category: string; cover_url: string | null; owner: User; created_at: string; published_at: string | null;
 }
 export interface Notification { id: number; type: string; message: string; link: string | null; is_read: boolean; created_at: string }

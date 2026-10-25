@@ -21,7 +21,7 @@ from .seed import seed
 from .storage import path_for
 
 MEDIA = BASE_DIR / "seed_media"
-MIME = {".webm": ("video", "video/webm"), ".mp3": ("audio", "audio/mpeg")}
+MIME = {".webm": ("video", "video/webm"), ".mp3": ("audio", "audio/mpeg"), ".png": ("image", "image/png")}
 
 
 def _asset(db, owner: User, filename: str) -> MediaAsset:

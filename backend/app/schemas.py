@@ -199,8 +199,9 @@ class EpisodeOut(BaseModel):
     description: str
     status: str
     rejection_reason: str | None
-    audio_url: str
+    audio_url: str  # media URL (audio or video)
     mime_type: str
+    is_video: bool = False
     podcast_id: int
     podcast_title: str
     category: str

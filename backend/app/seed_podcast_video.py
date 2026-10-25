@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 
 from .db import SessionLocal
-from .models import AuditLog, Comment, Like, ModerationAction, Notification, User, Video
+from .models import AuditLog, Comment, Episode, Like, ModerationAction, Notification, Podcast, User, Video
 from .seed import seed
 from .seed_demo import _asset
 
@@ -12,8 +12,48 @@ TITLE = "Faith Space Conversations — What does gratitude look like?"
 OLD_TITLES = ["Open Door Dialogues — Why we gather (video podcast)"]  # superseded single-narrator demo
 
 
+EP_TITLE = "Episode 2 — Why we gather (video conversation)"
+
+
+def seed_video_episode():
+    """Same two-person conversation, published as a VIDEO episode in the Podcasts section."""
+    with SessionLocal() as db:
+        if db.scalar(select(Episode).where(Episode.title == EP_TITLE)):
+            return
+        show = db.scalar(select(Podcast).where(Podcast.title == "Open Door Dialogues"))
+        if not show:
+            return
+        t = datetime.now(timezone.utc) - timedelta(minutes=30)
+        asset = _asset(db, show.owner, "gratitude-conversation.webm")
+        e = Episode(podcast_id=show.id, asset_id=asset.id, title=EP_TITLE, status="approved", created_at=t, published_at=t + timedelta(minutes=5),
+                    description="Priya and Daniel talk about gratitude across traditions. Video episode with live captions (synthesized voices).")
+        db.add(e)
+        db.flush()
+        admin = db.scalar(select(User).where(User.email == "admin@faithspace.demo"))
+        db.add(ModerationAction(admin_id=admin.id, target_type="episode", target_id=e.id, target_title=EP_TITLE, action="approve", created_at=t + timedelta(minutes=5)))
+        db.add(AuditLog(actor_id=admin.id, action="moderation.approve", entity_type="episode", entity_id=e.id, details={"title": EP_TITLE, "reason": None}, created_at=t + timedelta(minutes=5)))
+        db.commit()
+        print("Added video episode:", EP_TITLE)
+
+
+COVERS = {"Stillness Sessions": "cover-stillness.png", "Open Door Dialogues": "cover-open-door.png"}
+
+
+def seed_covers():
+    """Attach generated cover art to the demo shows that have none yet."""
+    with SessionLocal() as db:
+        for title, f in COVERS.items():
+            show = db.scalar(select(Podcast).where(Podcast.title == title))
+            if show and not show.cover_asset_id:
+                show.cover_asset_id = _asset(db, show.owner, f).id
+                print("Cover added:", title)
+        db.commit()
+
+
 def main():
     seed()
+    seed_video_episode()
+    seed_covers()
     with SessionLocal() as db:
         if db.scalar(select(Video).where(Video.title == TITLE)):
             print("Video podcast already present.")

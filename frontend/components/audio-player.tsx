@@ -10,7 +10,7 @@ const posKey = (id: number) => `fs_pos_${id}`;
 
 /** Real HTML5 audio player. Position is remembered per episode for the browser session (sessionStorage). */
 export function AudioPlayer({ episode }: { episode: Episode }) {
-  const a = useRef<HTMLAudioElement>(null);
+  const a = useRef<HTMLMediaElement>(null);
   const [playing, setPlaying] = useState(false);
   const [t, setT] = useState(0);
   const [dur, setDur] = useState(0);
@@ -34,18 +34,28 @@ export function AudioPlayer({ episode }: { episode: Episode }) {
 
   return (
     <div className="rounded-2xl border border-line bg-surface p-4 sm:p-5" data-testid="audio-player">
-      <audio
-        ref={a} src={mediaSrc(episode.audio_url, episode.status)} preload="metadata"
-        onLoadedMetadata={(e) => { setDur(e.currentTarget.duration); setLoading(false); }}
-        onCanPlay={() => setLoading(false)} onWaiting={() => setLoading(true)} onPlaying={() => setLoading(false)}
-        onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => { setPlaying(false); sessionStorage.removeItem(posKey(episode.id)); }}
-        onError={() => { setFailed(true); setLoading(false); }}
-        onTimeUpdate={(e) => {
-          const c = e.currentTarget.currentTime;
-          setT(c);
-          if (Math.abs(c - lastSave.current) > 1) { lastSave.current = c; sessionStorage.setItem(posKey(episode.id), String(c)); }
-        }}
-      />
+      {(() => {
+        const common = {
+          src: mediaSrc(episode.audio_url, episode.status), preload: "metadata" as const,
+          onLoadedMetadata: (e: React.SyntheticEvent<HTMLMediaElement>) => { const d = e.currentTarget.duration; setDur(isFinite(d) ? d : e.currentTarget.seekable.length ? e.currentTarget.seekable.end(e.currentTarget.seekable.length - 1) : 0); setLoading(false); },
+          onCanPlay: () => setLoading(false), onWaiting: () => setLoading(true), onPlaying: () => setLoading(false),
+          onPlay: () => setPlaying(true), onPause: () => setPlaying(false),
+          onEnded: () => { setPlaying(false); sessionStorage.removeItem(posKey(episode.id)); },
+          onError: () => { setFailed(true); setLoading(false); },
+          onTimeUpdate: (e: React.SyntheticEvent<HTMLMediaElement>) => {
+            const c = e.currentTarget.currentTime;
+            setT(c);
+            if (!isFinite(e.currentTarget.duration)) setDur(e.currentTarget.seekable.length ? e.currentTarget.seekable.end(e.currentTarget.seekable.length - 1) : c);
+            if (Math.abs(c - lastSave.current) > 1) { lastSave.current = c; sessionStorage.setItem(posKey(episode.id), String(c)); }
+          },
+        };
+        return episode.is_video ? (
+          <video ref={a as React.RefObject<HTMLVideoElement>} {...common} playsInline onClick={toggle} data-testid="episode-video"
+            className="mb-4 aspect-video w-full cursor-pointer rounded-xl bg-black object-contain" />
+        ) : (
+          <audio ref={a as React.RefObject<HTMLAudioElement>} {...common} />
+        );
+      })()}
       {failed ? (
         <div role="alert" className="flex items-center gap-3 text-sm"><AlertTriangle className="h-5 w-5 text-warn" />This episode couldn’t be played.
           <Button size="sm" variant="outline" onClick={() => { setFailed(false); setLoading(true); a.current?.load(); }}>Retry</Button></div>
