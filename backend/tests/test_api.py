@@ -277,6 +277,36 @@ def test_pagination(client, admin, creator):
     assert p["total"] == 3 and len(p["items"]) == 1
 
 
+def test_direct_messages_flow(client, viewer, creator, creator2):
+    cid = client.get("/auth/me", headers=creator).json()["id"]
+    vid = client.get("/auth/me", headers=viewer).json()["id"]
+    assert client.post(f"/messages/with/{cid}", headers=viewer, json={"body": "Hello Daniel!"}).status_code == 201
+    assert client.post(f"/messages/with/{cid}", headers=viewer, json={"body": "   "}).status_code == 422
+    assert client.post(f"/messages/with/{vid}", headers=viewer, json={"body": "me"}).status_code == 400
+    assert client.post("/messages/with/9999", headers=viewer, json={"body": "x"}).status_code == 404
+    assert client.get("/messages/unread-count", headers=creator).json() == {"count": 1}
+    conv = client.get("/messages/conversations", headers=creator).json()
+    assert conv[0]["user"]["id"] == vid and conv[0]["unread_count"] == 1 and conv[0]["last_message"] == "Hello Daniel!"
+    # opening the thread marks it as read; the sender then sees the read receipt
+    t = client.get(f"/messages/with/{vid}", headers=creator).json()
+    assert [m["body"] for m in t] == ["Hello Daniel!"]
+    assert client.get("/messages/unread-count", headers=creator).json() == {"count": 0}
+    assert client.get(f"/messages/with/{cid}", headers=viewer).json()[0]["read_at"] is not None
+    client.post(f"/messages/with/{vid}", headers=creator, json={"body": "Hi Vera"})
+    assert [m["body"] for m in client.get(f"/messages/with/{cid}", headers=viewer).json()] == ["Hello Daniel!", "Hi Vera"]
+    # a third user sees none of it; unauthenticated is rejected
+    assert client.get("/messages/conversations", headers=creator2).json() == []
+    assert client.get(f"/messages/with/{cid}", headers=creator2).json() == []
+    assert client.get("/messages/conversations").status_code == 401
+
+
+def test_user_search_for_messaging(client, viewer):
+    assert client.get("/users/search?q=a", headers=viewer).json() == []  # too short
+    names = [u["display_name"] for u in client.get("/users/search?q=creator", headers=viewer).json()]
+    assert "Daniel Creator" in names and "Vera Viewer" not in names
+    assert client.get("/users/search?q=creator").status_code == 401
+
+
 def test_video_episode_publish_and_play(client, creator, viewer, admin):
     p = client.post("/podcasts", headers=creator, json={"title": "Video Show", "category": "Interfaith"}).json()
     a = upload(client, creator, "video", "talk.webm", WEBM, "video/webm").json()

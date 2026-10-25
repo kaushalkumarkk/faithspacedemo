@@ -95,6 +95,8 @@ export interface Episode {
   podcast_id: number; podcast_title: string; category: string; cover_url: string | null; owner: User; created_at: string; published_at: string | null;
 }
 export interface Notification { id: number; type: string; message: string; link: string | null; is_read: boolean; created_at: string }
+export interface Message { id: number; sender_id: number; recipient_id: number; body: string; created_at: string; read_at: string | null }
+export interface Conversation { user: User; last_message: string; last_sender_id: number; last_at: string; unread_count: number }
 export interface Page<T> { items: T[]; total: number; page: number; page_size: number }
 export interface ModItem {
   type: "video" | "episode"; id: number; title: string; status: Status; owner: User; media_url: string; mime_type: string;

@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     max_image_mb: int = 5
     login_rate_limit: int = 10  # attempts per minute per IP
     upload_rate_limit: int = 30  # uploads per minute per user
+    message_rate_limit: int = 40  # messages per minute per user
 
 
 settings = Settings()

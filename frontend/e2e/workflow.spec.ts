@@ -191,3 +191,30 @@ test("D. podcast: creator uploads MP3, admin approves, viewer finds, plays and s
   await viewer.reload();
   await expect.poll(() => viewer.locator("audio").evaluate((a: HTMLAudioElement) => a.currentTime)).toBeGreaterThan(3);
 });
+
+test("F. direct messages: viewer writes to creator, unread badge, reply, read receipt", async () => {
+  const HELLO = `Hello from e2e ${Date.now()}`;
+  const REPLY = `Reply from creator ${Date.now()}`;
+
+  await viewer.goto("/messages");
+  await viewer.getByTestId("msg-search").fill("Daniel");
+  await viewer.getByTestId("msg-search-result").first().click();
+  await expect(viewer.getByTestId("thread-name")).toHaveText("Daniel Creator");
+  await viewer.getByTestId("msg-input").fill(HELLO);
+  await viewer.getByTestId("msg-send").click();
+  await expect(viewer.getByTestId("message").filter({ hasText: HELLO })).toBeVisible();
+
+  await creator.goto("/messages");
+  await expect(creator.getByTestId("msg-badge")).toHaveText("1");
+  await expect(creator.getByTestId("conv-unread")).toHaveText("1");
+  await creator.getByTestId("conversation").first().click();
+  await expect(creator.getByTestId("message").filter({ hasText: HELLO })).toBeVisible();
+  await expect(creator.getByTestId("msg-badge")).toHaveCount(0); // opening the thread marks it read
+  await creator.getByTestId("msg-input").fill(REPLY);
+  await creator.getByTestId("msg-input").press("Enter");
+
+  await expect(viewer.getByTestId("message").filter({ hasText: REPLY })).toBeVisible({ timeout: 15_000 }); // polling
+  await viewer.reload();
+  await viewer.getByTestId("conversation").first().click();
+  await expect(viewer.getByTestId("message").filter({ hasText: HELLO })).toBeVisible(); // persisted
+});

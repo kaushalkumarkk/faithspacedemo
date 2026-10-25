@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import settings
-from .routers import admin, auth_users, notifications, podcasts, uploads, videos
+from .routers import admin, auth_users, messages, notifications, podcasts, uploads, videos
 
 app = FastAPI(title="Faith Space API — Technical Proof of Concept", version="0.1.0")
 
@@ -42,7 +42,7 @@ async def validation_exc(_: Request, exc: RequestValidationError):
 for r in (
     auth_users.auth_router, auth_users.users_router, uploads.uploads_router, uploads.media_router,
     videos.videos_router, videos.comments_router, podcasts.podcasts_router, podcasts.episodes_router,
-    notifications.router, admin.moderation_router, admin.reports_router, admin.audit_router, admin.admin_router,
+    notifications.router, messages.router, admin.moderation_router, admin.reports_router, admin.audit_router, admin.admin_router,
 ):
     app.include_router(r)
 

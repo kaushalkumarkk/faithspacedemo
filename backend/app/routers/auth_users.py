@@ -75,6 +75,17 @@ def update_me(body: s.ProfileUpdate, user: User = Depends(current_user), db: Ses
     return user_out(db, user, user, full=True)
 
 
+@users_router.get("/search", response_model=list[s.UserOut])
+def search_users(q: str = "", me: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Find people to message (display-name match, active accounts, excludes yourself)."""
+    q = q.strip()
+    if len(q) < 2:
+        return []
+    rows = db.scalars(select(User).where(User.is_active.is_(True), User.id != me.id, User.display_name.ilike(f"%{q}%"))
+                      .order_by(User.display_name).limit(10)).unique().all()
+    return [user_out(db, u, me) for u in rows]
+
+
 @users_router.get("/{user_id}", response_model=s.UserOut)
 def get_user(user_id: int, viewer: User | None = Depends(optional_user), db: Session = Depends(get_db)):
     u = db.get(User, user_id)

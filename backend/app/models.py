@@ -165,6 +165,21 @@ class ModerationAction(Base):
     admin = relationship("User", lazy="joined")
 
 
+class Message(Base):
+    """Direct (1:1) message. read_at is set when the recipient opens the thread."""
+    __tablename__ = "messages"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sender_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    recipient_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (
+        Index("ix_messages_pair", "sender_id", "recipient_id", "created_at"),
+        Index("ix_messages_unread", "recipient_id", "read_at"),
+    )
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
     id: Mapped[int] = mapped_column(primary_key=True)

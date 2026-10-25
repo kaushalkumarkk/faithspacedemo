@@ -60,6 +60,7 @@ Regenerate the media: `node ../frontend/scripts/make-demo-media.mjs seed_media` 
 | Comments / likes | `GET/POST /videos/{id}/comments`, `DELETE /comments/{id}`, `POST/DELETE /videos/{id}/likes` |
 | Podcasts | `GET/POST /podcasts`, `GET/PATCH/DELETE /podcasts/{id}`, `GET /podcasts/mine` |
 | Episodes | `GET/POST /episodes`, `GET/PATCH/DELETE /episodes/{id}`, `GET /episodes/mine` |
+| Messages | `GET /messages/conversations`, `GET /messages/unread-count`, `GET/POST /messages/with/{user_id}` (reading a thread marks it read), `GET /users/search?q=` |
 | Notifications | `GET /notifications`, `GET /notifications/unread-count`, `POST /notifications/{id}/read`, `POST /notifications/read-all` |
 | Moderation | `GET /admin/moderation/queue`, `POST /admin/moderation/{video\|episode}/{id}/{approve\|reject\|hide\|restore}`, `GET /admin/moderation/history` |
 | Reports / audit | `POST /reports`, `GET /admin/reports`, `POST /admin/reports/{id}/resolve`, `GET /admin/audit-logs`, `GET /admin/comments`, `GET /admin/overview` |
@@ -77,7 +78,7 @@ Conventions: pagination via `page` / `page_size` → `{items,total,page,page_siz
 ## Tests
 
 ```powershell
-.venv\Scripts\python -m pytest -q      # 35 tests, isolated temporary SQLite DB + storage
+.venv\Scripts\python -m pytest -q      # 38 tests, isolated temporary SQLite DB + storage
 ```
 
 Covers: auth, unauthorized admin access, upload validation and limits, media retrieval + Range, approve/reject/hide/restore lifecycle with audit trail, likes, comments/replies/ownership, podcast publish/search/play, notifications, follows, reports, pagination, structured errors. Tests never touch your `.env` database.

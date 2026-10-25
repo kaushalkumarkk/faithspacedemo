@@ -33,6 +33,7 @@ The login page has one-click Admin / Creator / Viewer buttons. To keep Creator, 
 | `/upload` | Creator: upload or **record** a video (MediaRecorder), or upload a podcast episode — real progress + cancel |
 | `/studio` | Creator: own videos/episodes with moderation status, edit, delete |
 | `/podcasts`, `/podcasts/[id]`, `/episodes/[id]` | Browse/search, show page, audio player (seek, ±15 s, speed, volume, resume within session) |
+| `/messages` | Direct messages: conversation list, user search, thread, unread badges, read receipts (polls every 4–8 s; no WebSockets yet) |
 | `/notifications` | Notification history, mark read / mark all |
 | `/profile/[id]` | Profile, avatar, follow/unfollow |
 | `/admin/*` | Overview + pending queue, Users, Videos, Podcasts, Comments, Reports, Moderation history + audit log |

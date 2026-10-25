@@ -274,6 +274,27 @@ class ModerationActionOut(BaseModel):
     created_at: datetime
 
 
+class MessageCreate(BaseModel):
+    body: str = Field(min_length=1, max_length=2000)
+
+
+class MessageOut(BaseModel):
+    id: int
+    sender_id: int
+    recipient_id: int
+    body: str
+    created_at: datetime
+    read_at: datetime | None
+
+
+class ConversationOut(BaseModel):
+    user: UserOut
+    last_message: str
+    last_sender_id: int
+    last_at: datetime
+    unread_count: int
+
+
 class AuditLogOut(BaseModel):
     id: int
     actor: UserOut | None

@@ -1,7 +1,7 @@
 "use client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Bell, GitBranch, Headphones, LayoutDashboard, LogIn, LogOut, Moon, PlaySquare, PlusSquare, Sparkles, Sun, UserRound, Video,
+  Bell, GitBranch, Headphones, LayoutDashboard, LogIn, LogOut, MessageSquare, Moon, PlaySquare, PlusSquare, Sparkles, Sun, UserRound, Video,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import Link from "next/link";
@@ -23,7 +23,8 @@ export function Logo({ className }: { className?: string }) {
 
 function useNav() {
   const { user } = useAuth();
-  const items = [
+  const unread = useQuery({ queryKey: ["msg-unread"], queryFn: () => api<{ count: number }>("/messages/unread-count"), refetchInterval: 8000, enabled: !!user });
+  const items: { href: string; label: string; icon: React.ElementType; mobile: boolean; badge?: number }[] = [
     { href: "/", label: "Watch", icon: PlaySquare, mobile: true },
     { href: "/podcasts", label: "Podcasts", icon: Headphones, mobile: true },
   ];
@@ -31,6 +32,7 @@ function useNav() {
     items.push({ href: "/upload", label: "Create", icon: PlusSquare, mobile: true });
     items.push({ href: "/studio", label: "My studio", icon: Video, mobile: false });
   }
+  if (user) items.push({ href: "/messages", label: "Messages", icon: MessageSquare, mobile: true, badge: unread.data?.count });
   if (user) items.push({ href: "/notifications", label: "Notifications", icon: Bell, mobile: true });
   if (user?.role === "admin") items.push({ href: "/admin", label: "Admin", icon: LayoutDashboard, mobile: true });
   return items;
@@ -143,6 +145,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link key={i.href} href={i.href} aria-current={isActive(path, i.href) ? "page" : undefined}
               className={cn("flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-elevated", isActive(path, i.href) && "bg-brand/10 text-brand")}>
               <i.icon className="h-5 w-5" aria-hidden />{i.label}
+              {!!i.badge && <span data-testid="msg-badge" className="ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-danger px-1.5 text-[11px] font-bold text-white">{i.badge > 9 ? "9+" : i.badge}</span>}
             </Link>
           ))}
           <div className="my-3 border-t border-line" />
@@ -175,10 +178,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Mobile bottom nav */}
       <nav aria-label="Primary mobile" className="fixed inset-x-0 bottom-0 z-40 flex border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
-        {nav.filter((i) => i.mobile).slice(0, 5).map((i) => (
+        {nav.filter((i) => i.mobile).slice(0, 6).map((i) => (
           <Link key={i.href} href={i.href} aria-current={isActive(path, i.href) ? "page" : undefined}
-            className={cn("flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px]", isActive(path, i.href) ? "text-brand" : "text-muted")}>
+            className={cn("relative flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px]", isActive(path, i.href) ? "text-brand" : "text-muted")}>
             <i.icon className="h-5 w-5" aria-hidden />{i.label}
+            {!!i.badge && <span className="absolute right-1/4 top-1 grid h-4 min-w-4 place-items-center rounded-full bg-danger px-1 text-[10px] font-bold text-white">{i.badge > 9 ? "9+" : i.badge}</span>}
           </Link>
         ))}
         {!user && <Link href="/login" className="flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] text-muted"><UserRound className="h-5 w-5" aria-hidden />Log in</Link>}

@@ -1,6 +1,6 @@
 "use client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera } from "lucide-react";
+import { Camera, MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useRef, useState } from "react";
@@ -61,8 +61,11 @@ export default function ProfilePage() {
           </>)}
           <p className="text-sm"><b data-testid="follower-count">{p.follower_count}</b> followers · <b>{p.following_count}</b> following · <b>{p.video_count}</b> videos</p>
           {mine ? !editing && <Button size="sm" variant="outline" onClick={() => { setName(p.display_name); setBio(p.bio); setEditing(true); }}>Edit profile</Button>
-            : <Button size="sm" variant={p.is_following ? "outline" : "primary"} data-testid="follow-btn" loading={follow.isPending}
-                onClick={() => (me ? follow.mutate() : router.push("/login"))}>{p.is_following ? "Following" : "Follow"}</Button>}
+            : <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant={p.is_following ? "outline" : "primary"} data-testid="follow-btn" loading={follow.isPending}
+                  onClick={() => (me ? follow.mutate() : router.push("/login"))}>{p.is_following ? "Following" : "Follow"}</Button>
+                <Button size="sm" variant="outline" data-testid="message-btn" onClick={() => router.push(`/messages?u=${p.id}`)}><MessageSquare className="h-4 w-4" />Message</Button>
+              </div>}
         </div>
       </div>
       <section>

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 
 from .db import SessionLocal
-from .models import AuditLog, Comment, Episode, Like, ModerationAction, Notification, Podcast, User, Video
+from .models import AuditLog, Comment, Episode, Like, Message, ModerationAction, Notification, Podcast, User, Video
 from .seed import seed
 from .seed_demo import _asset
 
@@ -50,8 +50,27 @@ def seed_covers():
         db.commit()
 
 
+def seed_messages():
+    """A short sample conversation between the demo viewer and creator (one unread message for the creator)."""
+    with SessionLocal() as db:
+        if db.scalar(select(Message)):
+            return
+        by = {u.email.split("@")[0]: u for u in db.scalars(select(User)).unique()}
+        v, c = by["viewer"], by["creator"]
+        now = datetime.now(timezone.utc)
+        read = now - timedelta(hours=1)
+        db.add_all([
+            Message(sender_id=v.id, recipient_id=c.id, body="Hi Daniel, loved your Morning Light reflection!", created_at=now - timedelta(hours=3), read_at=read),
+            Message(sender_id=c.id, recipient_id=v.id, body="Thank you, Vera! That means a lot. Anything you'd like me to cover next?", created_at=now - timedelta(hours=2), read_at=read),
+            Message(sender_id=v.id, recipient_id=c.id, body="Maybe something on gratitude across traditions?", created_at=now - timedelta(minutes=20)),
+        ])
+        db.commit()
+        print("Seeded sample messages")
+
+
 def main():
     seed()
+    seed_messages()
     seed_video_episode()
     seed_covers()
     with SessionLocal() as db:

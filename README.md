@@ -88,8 +88,8 @@ Solid = implemented; dashed = proposed. The same diagram (interactive) is at `/a
 
 | Suite | Command | Result (last run) |
 |---|---|---|
-| Backend (pytest, 35 tests) | `cd backend; .venv\Scripts\python -m pytest -q` | 35 passed |
-| E2E (Playwright, 9 tests) | `cd frontend; npm run e2e` | 9 passed |
+| Backend (pytest, 38 tests) | `cd backend; .venv\Scripts\python -m pytest -q` | 38 passed |
+| E2E (Playwright, 10 tests) | `cd frontend; npm run e2e` | 10 passed |
 | Frontend build + type-check | `cd frontend; npm run build` | passed |
 
 ## Feature verification checklist
@@ -108,6 +108,7 @@ Solid = implemented; dashed = proposed. The same diagram (interactive) is at `/a
 | 10 | Critical acceptance flow (upload→queue→approve→feed→hide→audit, across sessions) | ✅ | pytest + e2e |
 | 11 | In-app notifications: bell, unread, mark read, history, persisted | ✅ | pytest, e2e |
 | 12 | Architecture page | ✅ | build; manual |
+| 12b | Direct messages (1:1, unread badges, read receipts; polling not WebSockets) | ✅ | pytest, e2e |
 | 13 | PostgreSQL (Supabase) with Alembic migration + seeded data | ✅ migration + seed applied to Supabase; API test-suite runs on SQLite | manual |
 | 14 | Rate limiting, MIME/ext/magic-byte validation, safe media serving | ✅ (in-memory limiter) | pytest |
 | 15 | Signed direct-to-storage uploads / Supabase Storage / S3 | ❌ not implemented | roadmap |
@@ -120,7 +121,7 @@ Solid = implemented; dashed = proposed. The same diagram (interactive) is at `/a
 2. **Workers** (Celery/RQ/Cloud Tasks): retryable post-upload jobs with status on `media_assets`.
 3. **FFmpeg**: normalise to H.264/AAC, extract poster thumbnails, fix WebM duration/cues, loudness-normalise audio.
 4. **HLS** adaptive streaming + **CDN** (signed URLs for pending media instead of `?token=`).
-5. **Malware scanning** (ClamAV) before an asset can become visible.
+5. **Real-time messaging** (WebSockets/SSE or Supabase Realtime), group chats, attachments, blocking/reporting of messages. **Malware scanning** (ClamAV) before an asset can become visible.
 6. Redis-backed rate limiting, refresh tokens, email verification/password reset, web push (service worker + VAPID), observability.
 
 ## Known limitations
