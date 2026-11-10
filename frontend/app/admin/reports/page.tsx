@@ -12,27 +12,50 @@ export default function AdminReports() {
   const [status, setStatus] = useState("open");
   const q = useQuery({ queryKey: ["admin-reports", status], queryFn: () => api<Page<Report>>(`/admin/reports?status=${status}&page_size=30`) });
   const done = () => {
-    for (const k of ["admin-reports", "admin-overview", "mod-queue", "mod-history", "admin-comments", "feed"]) qc.invalidateQueries({ queryKey: [k] });
+    for (const k of ["admin-reports", "admin-overview", "mod-queue", "mod-history", "admin-comments", "admin-users", "feed"]) qc.invalidateQueries({ queryKey: [k] });
   };
   const resolve = useMutation({
     mutationFn: ({ id, resolution }: { id: number; resolution: string }) => api(`/admin/reports/${id}/resolve`, { method: "POST", json: { resolution } }),
     onSuccess: () => { toast.success("Report closed"); done(); },
     onError: (e) => toast.error((e as Error).message),
   });
-  // "Take down" hides the reported video/episode (or deletes the comment), then resolves the report.
+  // "Hide" unpublishes the reported video/episode, then resolves the report.
   const takeDown = useMutation({
     mutationFn: async (r: Report) => {
-      if (r.target_type === "comment") await api(`/comments/${r.target_id}`, { method: "DELETE" });
-      else await api(`/admin/moderation/${r.target_type}/${r.target_id}/hide`, { method: "POST", json: { reason: `Reported: ${r.reason}` } });
+      await api(`/admin/moderation/${r.target_type}/${r.target_id}/hide`, { method: "POST", json: { reason: `Reported: ${r.reason}` } });
       await api(`/admin/reports/${r.id}/resolve`, { method: "POST", json: { resolution: "resolved" } });
     },
-    onSuccess: () => { toast.success("Content taken down and report resolved"); done(); },
+    onSuccess: () => { toast.success("Content hidden and report resolved"); done(); },
     onError: (e) => toast.error((e as Error).message),
   });
-  const link = (r: Report) => (r.target_type === "video" ? `/?v=${r.target_id}` : r.target_type === "episode" ? `/episodes/${r.target_id}` : null);
+  // "Remove" permanently deletes the video/episode/comment/user (or suspends message sender) and resolves the report.
+  const removeTarget = useMutation({
+    mutationFn: async (r: Report) => {
+      if (r.target_type === "comment") {
+        await api(`/comments/${r.target_id}`, { method: "DELETE" });
+        await api(`/admin/reports/${r.id}/resolve`, { method: "POST", json: { resolution: "resolved" } });
+      } else if (r.target_type === "video" || r.target_type === "episode") {
+        await api(`/admin/moderation/${r.target_type}/${r.target_id}/remove`, { method: "POST", json: { reason: `Reported: ${r.reason}` } });
+      } else if (r.target_type === "user") {
+        await api(`/users/${r.target_id}`, { method: "DELETE" });
+        await api(`/admin/reports/${r.id}/resolve`, { method: "POST", json: { resolution: "resolved" } });
+      } else if (r.target_type === "message") {
+        if (r.target_user_id) await api(`/users/${r.target_user_id}/status`, { method: "PATCH", json: { is_active: false } });
+        await api(`/admin/reports/${r.id}/resolve`, { method: "POST", json: { resolution: "resolved" } });
+      }
+    },
+    onSuccess: () => { toast.success("Removed and report resolved"); done(); },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const link = (r: Report) => (
+    r.target_type === "video" ? `/?v=${r.target_id}`
+      : r.target_type === "episode" ? `/episodes/${r.target_id}`
+      : r.target_type === "user" ? `/profile/${r.target_id}`
+      : null
+  );
   return (
     <>
-      <PageHeader title="Reports" subtitle="Content flagged by users." />
+      <PageHeader title="Reports" subtitle="Content and accounts flagged by users." />
       <div className="mb-4 flex gap-2 text-sm">
         {["open", "resolved", "dismissed", "all"].map((s) => (
           <button key={s} onClick={() => setStatus(s)} className={cn("rounded-full px-3 py-1 capitalize", status === s ? "bg-brand text-brand-fg" : "bg-elevated")}>{s}</button>
@@ -40,7 +63,7 @@ export default function AdminReports() {
       </div>
       {q.isLoading && <Skeleton className="h-32" />}
       {q.isError && <ErrorState error={q.error} retry={() => q.refetch()} />}
-      {q.data?.items.length === 0 && <EmptyState title="No reports" body="Viewers can report a video from the flag button in the feed." />}
+      {q.data?.items.length === 0 && <EmptyState title="No reports" body="Viewers can report videos, comments, messages, and users." />}
       <div className="space-y-2">
         {q.data?.items.map((r) => (
           <Card key={r.id} className="flex flex-wrap items-center gap-3 p-4" data-testid="report">
@@ -51,9 +74,14 @@ export default function AdminReports() {
             </div>
             <StatusBadge status={r.status} />
             {r.status === "open" && (
-              <div className="flex gap-2">
-                <Button size="sm" variant="danger" onClick={() => takeDown.mutate(r)} loading={takeDown.isPending && takeDown.variables?.id === r.id}>{r.target_type === "comment" ? "Delete comment" : "Take down"}</Button>
-                <Button size="sm" variant="outline" onClick={() => resolve.mutate({ id: r.id, resolution: "dismissed" })}>Dismiss</Button>
+              <div className="flex flex-wrap gap-2">
+                {(r.target_type === "video" || r.target_type === "episode") && (
+                  <Button size="sm" variant="secondary" data-testid="report-hide" onClick={() => takeDown.mutate(r)} loading={takeDown.isPending && takeDown.variables?.id === r.id}>Hide</Button>
+                )}
+                <Button size="sm" variant="danger" data-testid="report-remove" onClick={() => removeTarget.mutate(r)} loading={removeTarget.isPending && removeTarget.variables?.id === r.id}>
+                  {r.target_type === "comment" ? "Delete comment" : r.target_type === "user" ? "Remove user" : r.target_type === "message" ? "Suspend sender" : "Remove permanently"}
+                </Button>
+                <Button size="sm" variant="outline" data-testid="report-dismiss" onClick={() => resolve.mutate({ id: r.id, resolution: "dismissed" })}>Dismiss</Button>
               </div>
             )}
           </Card>

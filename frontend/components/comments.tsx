@@ -1,19 +1,21 @@
 "use client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CornerDownRight, Send, Trash2, X } from "lucide-react";
+import { CornerDownRight, Flag, Send, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api, type Comment } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { timeAgo } from "@/lib/utils";
-import { Avatar, Button, ErrorState, Skeleton } from "./ui";
+import { Avatar, Button, ErrorState, Modal, Skeleton, Textarea } from "./ui";
 
 export function CommentsPanel({ videoId, onClose }: { videoId: number; onClose: () => void }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const [body, setBody] = useState("");
   const [replyTo, setReplyTo] = useState<Comment | null>(null);
+  const [reporting, setReporting] = useState<Comment | null>(null);
+  const [reason, setReason] = useState("");
   const q = useQuery({ queryKey: ["comments", videoId], queryFn: () => api<Comment[]>(`/videos/${videoId}/comments`) });
 
   const invalidate = () => { qc.invalidateQueries({ queryKey: ["comments", videoId] }); qc.invalidateQueries({ queryKey: ["feed"] }); };
@@ -27,6 +29,11 @@ export function CommentsPanel({ videoId, onClose }: { videoId: number; onClose: 
     onSuccess: () => { toast.success("Comment deleted"); invalidate(); },
     onError: (e) => toast.error((e as Error).message),
   });
+  const submitReport = useMutation({
+    mutationFn: () => api("/reports", { method: "POST", json: { target_type: "comment", target_id: reporting!.id, reason } }),
+    onSuccess: () => { toast.success("Comment reported"); setReporting(null); setReason(""); },
+    onError: (e) => toast.error((e as Error).message),
+  });
 
   const Row = ({ c, nested }: { c: Comment; nested?: boolean }) => (
     <li className={nested ? "ml-9" : ""} data-testid="comment">
@@ -37,6 +44,9 @@ export function CommentsPanel({ videoId, onClose }: { videoId: number; onClose: 
           <p className="whitespace-pre-wrap break-words text-sm">{c.body}</p>
           <div className="mt-1 flex gap-3 text-xs text-muted">
             {user && !nested && <button className="hover:text-fg" onClick={() => setReplyTo(c)}>Reply</button>}
+            {user && user.id !== c.author.id && (
+              <button className="inline-flex items-center gap-1 hover:text-fg" aria-label="Report comment" data-testid="report-comment-btn" onClick={() => { setReporting(c); setReason(""); }}><Flag className="h-3 w-3" />Report</button>
+            )}
             {user && (user.id === c.author.id || user.role === "admin") && (
               <button className="inline-flex items-center gap-1 hover:text-danger" aria-label="Delete comment" onClick={() => del.mutate(c.id)}><Trash2 className="h-3 w-3" />Delete</button>
             )}
@@ -76,6 +86,15 @@ export function CommentsPanel({ videoId, onClose }: { videoId: number; onClose: 
           <p className="text-center text-sm text-muted"><Link href="/login" className="text-brand">Log in</Link> to comment.</p>
         )}
       </footer>
+      <Modal open={!!reporting} onClose={() => setReporting(null)} title="Report comment">
+        <form onSubmit={(e) => { e.preventDefault(); submitReport.mutate(); }} className="space-y-3">
+          <Textarea aria-label="Report reason" required minLength={3} maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why are you reporting this comment?" />
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setReporting(null)}>Cancel</Button>
+            <Button type="submit" loading={submitReport.isPending} disabled={reason.trim().length < 3} data-testid="submit-comment-report">Send report</Button>
+          </div>
+        </form>
+      </Modal>
     </section>
   );
 }

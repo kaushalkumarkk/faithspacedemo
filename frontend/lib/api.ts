@@ -80,12 +80,13 @@ export type Status = "pending" | "approved" | "rejected" | "hidden";
 export interface User {
   id: number; email: string | null; display_name: string; bio: string; role: Role; is_active: boolean;
   avatar_url: string | null; follower_count: number; following_count: number; video_count: number;
-  is_following: boolean; created_at: string;
+  is_following: boolean; is_blocked?: boolean; blocked_by_target?: boolean; created_at: string;
 }
 export interface Asset { id: number; kind: string; url: string; mime_type: string; size_bytes: number; original_filename: string }
 export interface Video {
   id: number; title: string; description: string; category: string; status: Status; rejection_reason: string | null;
-  video_url: string; mime_type: string; owner: User; like_count: number; comment_count: number; liked_by_me: boolean;
+  video_url: string; thumbnail_url: string | null; duration_seconds: number | null; mime_type: string;
+  owner: User; like_count: number; comment_count: number; liked_by_me: boolean;
   created_at: string; published_at: string | null;
 }
 export interface Comment { id: number; video_id: number; parent_id: number | null; body: string; author: User; created_at: string; replies: Comment[] }
@@ -99,11 +100,12 @@ export interface Message { id: number; sender_id: number; recipient_id: number; 
 export interface Conversation { user: User; last_message: string; last_sender_id: number; last_at: string; unread_count: number }
 export interface Page<T> { items: T[]; total: number; page: number; page_size: number }
 export interface ModItem {
-  type: "video" | "episode"; id: number; title: string; status: Status; owner: User; media_url: string; mime_type: string;
+  type: "video" | "episode"; id: number; title: string; status: Status; owner: User; media_url: string;
+  thumbnail_url: string | null; duration_seconds: number | null; mime_type: string;
   category: string; rejection_reason: string | null; created_at: string;
 }
 export interface ModAction { id: number; admin: User; target_type: string; target_id: number; target_title: string; action: string; reason: string | null; created_at: string }
-export interface Report { id: number; target_type: string; target_id: number; target_title: string; reason: string; status: string; reporter: User; created_at: string }
+export interface Report { id: number; target_type: string; target_id: number; target_title: string; target_user_id: number | null; reason: string; status: string; reporter: User; created_at: string }
 export interface AuditLog { id: number; actor: User | null; action: string; entity_type: string; entity_id: number | null; details: Record<string, unknown> | null; created_at: string }
 export interface AdminComment { id: number; video_id: number; video_title: string; body: string; author: User; created_at: string }
 

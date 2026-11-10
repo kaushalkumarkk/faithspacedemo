@@ -1,6 +1,6 @@
 "use client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Flag, Heart, Loader2, Maximize, MessageCircle, Pause, Play, Volume2, VolumeX } from "lucide-react";
+import { AlertTriangle, Ban, Flag, Heart, Loader2, Maximize, MessageCircle, Play, Volume2, VolumeX } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -11,9 +11,10 @@ import { cn, formatDateTime, formatTime, timeAgo } from "@/lib/utils";
 import { Avatar, Button, Modal, StatusBadge, Textarea } from "./ui";
 
 // MediaRecorder WebM files often report duration=Infinity; fall back to the seekable range.
-function realDuration(v: HTMLVideoElement): number {
-  if (isFinite(v.duration)) return v.duration;
-  return v.seekable.length ? v.seekable.end(v.seekable.length - 1) : v.currentTime;
+function realDuration(v: HTMLVideoElement, fallbackSeconds?: number | null): number {
+  if (isFinite(v.duration) && v.duration > 0) return v.duration;
+  if (v.seekable.length) return v.seekable.end(v.seekable.length - 1);
+  return fallbackSeconds || v.currentTime;
 }
 
 export function Reel({ video, active, muted, setMuted, onComments, commentsOpen }: {
@@ -28,7 +29,7 @@ export function Reel({ video, active, muted, setMuted, onComments, commentsOpen 
   const [buffering, setBuffering] = useState(true);
   const [failed, setFailed] = useState(false);
   const [t, setT] = useState(0);
-  const [dur, setDur] = useState(0);
+  const [dur, setDur] = useState(video.duration_seconds ?? 0);
   const [report, setReport] = useState(false);
   const [reason, setReason] = useState("");
 
@@ -52,6 +53,15 @@ export function Reel({ video, active, muted, setMuted, onComments, commentsOpen 
     onSuccess: () => { toast.success("Report sent to moderators"); setReport(false); setReason(""); },
     onError: (e) => toast.error((e as Error).message),
   });
+  const blockCreator = useMutation({
+    mutationFn: () => api(`/users/${video.owner.id}/block`, { method: "POST" }),
+    onSuccess: () => {
+      toast.success(`Blocked ${video.owner.display_name}`);
+      setReport(false);
+      qc.invalidateQueries({ queryKey: ["feed"] });
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
   const needAuth = (fn: () => void) => () => (user ? fn() : (toast.info("Log in to do that"), router.push("/login")));
 
   return (
@@ -59,12 +69,13 @@ export function Reel({ video, active, muted, setMuted, onComments, commentsOpen 
       <video
         ref={vref}
         src={mediaSrc(video.video_url, video.status)}
+        poster={mediaSrc(video.thumbnail_url, video.status)}
         className="h-full w-full object-contain"
         loop playsInline preload={active ? "auto" : "metadata"} muted={muted}
         onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
         onWaiting={() => setBuffering(true)} onCanPlay={() => setBuffering(false)} onPlaying={() => setBuffering(false)}
-        onLoadedMetadata={(e) => setDur(realDuration(e.currentTarget))}
-        onTimeUpdate={(e) => { setT(e.currentTarget.currentTime); if (!isFinite(e.currentTarget.duration)) setDur(realDuration(e.currentTarget)); }}
+        onLoadedMetadata={(e) => setDur(realDuration(e.currentTarget, video.duration_seconds))}
+        onTimeUpdate={(e) => { setT(e.currentTarget.currentTime); if (!isFinite(e.currentTarget.duration)) setDur(realDuration(e.currentTarget, video.duration_seconds)); }}
         onError={() => { setFailed(true); setBuffering(false); }}
         onClick={toggle}
       />
@@ -93,7 +104,7 @@ export function Reel({ video, active, muted, setMuted, onComments, commentsOpen 
           {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
         </button>
         <button aria-label="Full screen" onClick={() => (document.fullscreenElement ? document.exitFullscreen() : wrap.current?.requestFullscreen?.())} className="grid h-11 w-11 place-items-center rounded-full bg-black/45 backdrop-blur"><Maximize className="h-5 w-5" /></button>
-        <button aria-label="Report video" onClick={needAuth(() => setReport(true))} className="grid h-9 w-9 place-items-center rounded-full bg-black/45 backdrop-blur"><Flag className="h-4 w-4" /></button>
+        <button aria-label="Report video" data-testid="report-video-btn" onClick={needAuth(() => setReport(true))} className="grid h-9 w-9 place-items-center rounded-full bg-black/45 backdrop-blur"><Flag className="h-4 w-4" /></button>
       </div>
 
       {/* caption */}
@@ -105,8 +116,13 @@ export function Reel({ video, active, muted, setMuted, onComments, commentsOpen 
         </Link>
         <h2 className="text-base font-semibold leading-tight" data-testid="reel-title">{video.title}</h2>
         {video.description && <p className="mt-1 line-clamp-2 text-sm text-white/80">{video.description}</p>}
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs"><span className="rounded-full bg-white/15 px-2 py-0.5">{video.category}</span>
-          <time dateTime={video.created_at} title={`Uploaded ${formatDateTime(video.created_at)}`} className="text-white/75" data-testid="uploaded-at">Uploaded {formatDateTime(video.created_at)} · {timeAgo(video.created_at)}</time></div>
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+          <span className="rounded-full bg-white/15 px-2 py-0.5">{video.category}</span>
+          {video.duration_seconds != null && (
+            <span className="rounded-full bg-white/15 px-2 py-0.5 tabular-nums" data-testid="reel-duration">{formatTime(video.duration_seconds)}</span>
+          )}
+          <time dateTime={video.created_at} title={`Uploaded ${formatDateTime(video.created_at)}`} className="text-white/75" data-testid="uploaded-at">Uploaded {formatDateTime(video.created_at)} · {timeAgo(video.created_at)}</time>
+        </div>
       </div>
 
       {/* seek bar */}
@@ -117,10 +133,20 @@ export function Reel({ video, active, muted, setMuted, onComments, commentsOpen 
         <span className="w-8 tabular-nums">{formatTime(dur)}</span>
       </div>
 
-      <Modal open={report} onClose={() => setReport(false)} title="Report this video">
+      <Modal open={report} onClose={() => setReport(false)} title="Report or block">
         <form onSubmit={(e) => { e.preventDefault(); submitReport.mutate(); }} className="space-y-3">
           <Textarea aria-label="Reason" required minLength={3} maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="What’s wrong with this video?" />
-          <div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => setReport(false)}>Cancel</Button><Button type="submit" loading={submitReport.isPending} disabled={reason.trim().length < 3}>Send report</Button></div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {user && user.id !== video.owner.id ? (
+              <Button type="button" variant="outline" size="sm" onClick={() => blockCreator.mutate()} loading={blockCreator.isPending} data-testid="block-creator-btn">
+                <Ban className="h-4 w-4 text-danger" />Block {video.owner.display_name}
+              </Button>
+            ) : <span />}
+            <div className="flex gap-2">
+              <Button type="button" variant="ghost" onClick={() => setReport(false)}>Cancel</Button>
+              <Button type="submit" loading={submitReport.isPending} disabled={reason.trim().length < 3} data-testid="submit-report">Send report</Button>
+            </div>
+          </div>
         </form>
       </Modal>
     </div>

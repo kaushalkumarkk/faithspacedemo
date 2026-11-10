@@ -1,10 +1,10 @@
-"""Shared helpers: serializers, notifications, audit log."""
-from sqlalchemy import func, select
+"""Shared helpers: serializers, notifications, audit log, blocking."""
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from . import schemas as s
 from .models import (
-    AuditLog, Comment, Episode, Follow, Like, MediaAsset, Notification, Podcast, User, Video,
+    AuditLog, Comment, Episode, Follow, Like, MediaAsset, Notification, Podcast, User, UserBlock, Video,
 )
 
 
@@ -16,12 +16,45 @@ def notify(db: Session, user_id: int, type_: str, message: str, link: str | None
     db.add(Notification(user_id=user_id, type=type_, message=message[:300], link=link))
 
 
+def is_blocked_between(db: Session, u1_id: int, u2_id: int) -> bool:
+    return bool(
+        db.scalar(
+            select(UserBlock).where(
+                or_(
+                    (UserBlock.blocker_id == u1_id) & (UserBlock.blocked_id == u2_id),
+                    (UserBlock.blocker_id == u2_id) & (UserBlock.blocked_id == u1_id),
+                )
+            )
+        )
+    )
+
+
+def blocked_peer_ids(db: Session, user_id: int) -> set[int]:
+    """IDs of users blocked by user_id or who have blocked user_id."""
+    rows = db.execute(
+        select(UserBlock.blocker_id, UserBlock.blocked_id).where(
+            or_(UserBlock.blocker_id == user_id, UserBlock.blocked_id == user_id)
+        )
+    ).all()
+    peers: set[int] = set()
+    for blocker_id, blocked_id in rows:
+        peers.add(blocked_id if blocker_id == user_id else blocker_id)
+    return peers
+
+
 def user_out(db: Session, u: User, viewer: User | None = None, full: bool = False) -> s.UserOut:
     out = s.UserOut(
         id=u.id, display_name=u.display_name, bio=u.bio, role=u.role, is_active=u.is_active,
         avatar_url=s.media_url(u.avatar), created_at=u.created_at,
         email=u.email if (viewer and (viewer.id == u.id or viewer.role == "admin")) else None,
     )
+    if viewer and viewer.id != u.id:
+        out.is_blocked = bool(
+            db.scalar(select(UserBlock).where(UserBlock.blocker_id == viewer.id, UserBlock.blocked_id == u.id))
+        )
+        out.blocked_by_target = bool(
+            db.scalar(select(UserBlock).where(UserBlock.blocker_id == u.id, UserBlock.blocked_id == viewer.id))
+        )
     if full:
         out.follower_count = db.scalar(select(func.count()).select_from(Follow).where(Follow.followee_id == u.id)) or 0
         out.following_count = db.scalar(select(func.count()).select_from(Follow).where(Follow.follower_id == u.id)) or 0
@@ -39,7 +72,9 @@ def video_out(db: Session, v: Video, viewer: User | None) -> s.VideoOut:
     liked = bool(viewer and db.scalar(select(func.count()).select_from(Like).where(Like.video_id == v.id, Like.user_id == viewer.id)))
     return s.VideoOut(
         id=v.id, title=v.title, description=v.description, category=v.category, status=v.status,
-        rejection_reason=v.rejection_reason, video_url=s.media_url(v.asset), mime_type=v.asset.mime_type,
+        rejection_reason=v.rejection_reason, video_url=s.media_url(v.asset),
+        thumbnail_url=s.media_url(v.thumbnail), duration_seconds=v.duration_seconds,
+        mime_type=v.asset.mime_type,
         owner=user_out(db, v.owner, viewer), like_count=likes, comment_count=comments, liked_by_me=liked,
         created_at=v.created_at, published_at=v.published_at,
     )
@@ -77,3 +112,20 @@ def get_asset_owned(db: Session, asset_id: int | None, user: User, kind: str | t
     if a.owner_id != user.id and user.role != "admin":
         raise err(403, "forbidden", "You do not own that upload.")
     return a
+
+
+def delete_asset_if_unused(db: Session, asset: MediaAsset | None) -> str | None:
+    if not asset:
+        return None
+    aid = asset.id
+    in_use = (
+        db.scalar(select(Video.id).where((Video.asset_id == aid) | (Video.thumbnail_asset_id == aid)))
+        or db.scalar(select(Episode.id).where(Episode.asset_id == aid))
+        or db.scalar(select(Podcast.id).where(Podcast.cover_asset_id == aid))
+        or db.scalar(select(User.id).where(User.avatar_asset_id == aid))
+    )
+    if in_use:
+        return None
+    key = asset.storage_key
+    db.delete(asset)
+    return key

@@ -319,3 +319,136 @@ def test_video_episode_publish_and_play(client, creator, viewer, admin):
     client.post(f"/admin/moderation/episode/{eid}/approve", headers=admin)
     ep = client.get(f"/episodes/{eid}", headers=viewer).json()
     assert ep["is_video"] and client.get(ep["audio_url"]).headers["content-type"] == "video/webm"
+
+
+# ---------- thumbnails, 90s metadata & 20+ pagination ----------
+def test_video_with_thumbnail_and_90s_duration(client, creator, creator2, admin):
+    vid_asset = upload(client, creator, "video", "long90.mp4", MP4, "video/mp4").json()
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+    thumb_asset = upload(client, creator, "image", "thumb.png", png, "image/png").json()
+
+    # cannot attach someone else's thumbnail
+    bad = client.post("/videos", headers=creator2, json={
+        "asset_id": upload(client, creator2, "video", "c2.mp4", MP4, "video/mp4").json()["id"],
+        "thumbnail_asset_id": thumb_asset["id"],
+        "title": "Stolen thumb",
+        "category": "Reflection",
+    })
+    assert bad.status_code == 403
+
+    r = client.post("/videos", headers=creator, json={
+        "asset_id": vid_asset["id"],
+        "thumbnail_asset_id": thumb_asset["id"],
+        "duration_seconds": 90,
+        "title": "Ninety Second Reflection",
+        "category": "Reflection",
+    })
+    assert r.status_code == 201, r.text
+    v = r.json()
+    assert v["thumbnail_url"] == thumb_asset["url"]
+    assert v["duration_seconds"] == 90
+
+    q = client.get("/admin/moderation/queue?status=pending", headers=admin).json()
+    assert q["items"][0]["thumbnail_url"] == thumb_asset["url"]
+    assert q["items"][0]["duration_seconds"] == 90
+
+    client.post(f"/admin/moderation/video/{v['id']}/approve", headers=admin)
+    assert client.get(thumb_asset["url"]).status_code == 200
+    feed_item = client.get("/videos").json()["items"][0]
+    assert feed_item["thumbnail_url"] == thumb_asset["url"]
+    assert feed_item["duration_seconds"] == 90
+
+
+def test_feed_scroll_22_videos_pagination(client, admin, creator):
+    for i in range(22):
+        a = upload(client, creator, "video", f"v{i}.mp4", MP4 + bytes([i]), "video/mp4").json()
+        v = client.post("/videos", headers=creator, json={"asset_id": a["id"], "title": f"Scroll Video {i}", "category": "Music"}).json()
+        client.post(f"/admin/moderation/video/{v['id']}/approve", headers=admin)
+    p1 = client.get("/videos?page=1&page_size=8").json()
+    p2 = client.get("/videos?page=2&page_size=8").json()
+    p3 = client.get("/videos?page=3&page_size=8").json()
+    assert p1["total"] == 22 and len(p1["items"]) == 8
+    assert len(p2["items"]) == 8
+    assert len(p3["items"]) == 6
+
+
+# ---------- blocking & expanded reporting ----------
+def test_user_block_effects_and_unblock(client, creator, viewer, creator2):
+    cid = client.get("/auth/me", headers=creator).json()["id"]
+    vid_user = client.get("/auth/me", headers=viewer).json()["id"]
+
+    # creator publishes a video and comments on it
+    a = upload(client, creator, "video", "c.mp4", MP4, "video/mp4").json()
+    v = client.post("/videos", headers=creator, json={"asset_id": a["id"], "title": "Creator Clip", "category": "Story"}).json()
+    # approve via creator? need admin; instead test follow + messaging + search + block
+    assert client.post(f"/users/{cid}/follow", headers=viewer).status_code == 200
+    assert client.post(f"/messages/with/{cid}", headers=viewer, json={"body": "Hi before block"}).status_code == 201
+
+    # block removes follow, blocks messaging, hides from search, shows in /users/blocks
+    b = client.post(f"/users/{cid}/block", headers=viewer)
+    assert b.status_code == 200 and b.json()["is_blocked"] is True and b.json()["is_following"] is False
+    assert [u["id"] for u in client.get("/users/blocks", headers=viewer).json()] == [cid]
+    assert client.post(f"/messages/with/{cid}", headers=viewer, json={"body": "Blocked msg"}).status_code == 403
+    assert client.post(f"/messages/with/{vid_user}", headers=creator, json={"body": "Blocked reply"}).status_code == 403
+    assert client.post(f"/users/{cid}/follow", headers=viewer).status_code == 403
+    assert all(u["id"] != cid for u in client.get("/users/search?q=Daniel", headers=viewer).json())
+    assert client.get(f"/users/{vid_user}", headers=creator).json()["blocked_by_target"] is True
+
+    # unblock restores messaging and follow
+    ub = client.delete(f"/users/{cid}/block", headers=viewer)
+    assert ub.status_code == 200 and ub.json()["is_blocked"] is False
+    assert client.get("/users/blocks", headers=viewer).json() == []
+    assert client.post(f"/messages/with/{cid}", headers=viewer, json={"body": "Hi after unblock"}).status_code == 201
+    assert client.post(f"/users/{cid}/follow", headers=viewer).status_code == 200
+
+
+def test_block_hides_videos_and_comments_from_viewer(client, creator, viewer, admin, approved_video):
+    cid = client.get("/auth/me", headers=creator).json()["id"]
+    client.post(f"/videos/{approved_video['id']}/comments", headers=creator, json={"body": "Creator note"})
+    assert client.get("/videos", headers=viewer).json()["total"] == 1
+    assert len(client.get(f"/videos/{approved_video['id']}/comments", headers=viewer).json()) == 1
+
+    client.post(f"/users/{cid}/block", headers=viewer)
+    assert client.get("/videos", headers=viewer).json()["total"] == 0
+    assert client.get(f"/videos/{approved_video['id']}/comments", headers=viewer).json() == []
+
+
+def test_report_user_comment_and_message(client, creator, viewer, creator2, admin, approved_video):
+    cid = client.get("/auth/me", headers=creator).json()["id"]
+    c_resp = client.post(f"/videos/{approved_video['id']}/comments", headers=creator, json={"body": "Comment to report"})
+    m_resp = client.post(f"/messages/with/{cid}", headers=viewer, json={"body": "Message to report"})
+
+    assert client.post("/reports", headers=viewer, json={"target_type": "comment", "target_id": c_resp.json()["id"], "reason": "Spam comment"}).status_code == 201
+    assert client.post("/reports", headers=viewer, json={"target_type": "user", "target_id": cid, "reason": "Abusive behavior"}).status_code == 201
+    assert client.post("/reports", headers=creator2, json={"target_type": "message", "target_id": m_resp.json()["id"], "reason": "Not mine"}).status_code == 403
+    assert client.post("/reports", headers=creator, json={"target_type": "message", "target_id": m_resp.json()["id"], "reason": "Harassment"}).status_code == 201
+
+    reports = client.get("/admin/reports", headers=admin).json()["items"]
+    assert {r["target_type"] for r in reports} == {"comment", "user", "message"}
+
+
+# ---------- admin permanent removal ----------
+def test_admin_permanent_content_and_user_removal(client, creator, viewer, admin):
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+    va = upload(client, creator, "video", "rem.mp4", MP4, "video/mp4").json()
+    ta = upload(client, creator, "image", "rem.png", png, "image/png").json()
+    v = client.post("/videos", headers=creator, json={"asset_id": va["id"], "thumbnail_asset_id": ta["id"], "title": "Remove Me", "category": "Music"}).json()
+    client.post(f"/admin/moderation/video/{v['id']}/approve", headers=admin)
+    client.post("/reports", headers=viewer, json={"target_type": "video", "target_id": v["id"], "reason": "Policy violation"})
+
+    rem = client.post(f"/admin/moderation/video/{v['id']}/remove", headers=admin, json={"reason": "Confirmed violation"})
+    assert rem.status_code == 200 and rem.json()["status"] == "deleted"
+    assert client.get(f"/videos/{v['id']}").status_code == 404
+    assert client.get(va["url"]).status_code == 404
+    assert client.get(ta["url"]).status_code == 404
+    assert client.get("/admin/reports?status=open", headers=admin).json()["total"] == 0
+    assert any(a["action"] == "delete" and a["target_title"] == "Remove Me"
+               for a in client.get("/admin/moderation/history", headers=admin).json()["items"])
+
+    # admin permanent user removal
+    cid = client.get("/auth/me", headers=creator).json()["id"]
+    va2 = upload(client, creator, "video", "rem2.mp4", MP4, "video/mp4").json()
+    client.post("/videos", headers=creator, json={"asset_id": va2["id"], "title": "Creator leftover", "category": "Music"})
+    assert client.delete(f"/users/{cid}", headers=admin).status_code == 204
+    assert client.get(f"/users/{cid}").status_code == 404
+    assert client.get(va2["url"]).status_code == 404

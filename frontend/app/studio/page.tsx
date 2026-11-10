@@ -6,8 +6,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Gate } from "@/components/gate";
 import { Button, Card, EmptyState, ErrorState, Field, Input, Modal, PageHeader, Skeleton, StatusBadge, Textarea } from "@/components/ui";
-import { api, type Episode, type Video } from "@/lib/api";
-import { cn, formatDateTime, timeAgo } from "@/lib/utils";
+import { api, mediaSrc, type Episode, type Video } from "@/lib/api";
+import { cn, formatDateTime, formatTime, timeAgo } from "@/lib/utils";
 
 type Editing = { kind: "video" | "episode"; id: number; title: string; description: string } | null;
 
@@ -28,12 +28,27 @@ function Studio() {
     onSuccess: () => { toast.success("Saved — edits to published content are re-reviewed"); setEdit(null); refresh(); }, onError: (e) => toast.error((e as Error).message),
   });
 
-  const Row = ({ kind, id, title, subtitle, status, reason, created, link }: { kind: "video" | "episode"; id: number; title: string; subtitle?: string; status: string; reason: string | null; created: string; link: string }) => {
+  const Row = ({ kind, id, title, subtitle, status, reason, created, link, thumbUrl, duration }: {
+    kind: "video" | "episode"; id: number; title: string; subtitle?: string; status: string; reason: string | null; created: string; link: string; thumbUrl?: string | null; duration?: number | null;
+  }) => {
     const item = (kind === "video" ? videos.data?.find((v) => v.id === id) : episodes.data?.find((e) => e.id === id))!;
     return (
       <Card className="flex flex-wrap items-center gap-3 p-4" data-testid={`studio-${kind}`}>
-        <div className="min-w-0 basis-full sm:basis-0 sm:flex-1"><Link href={link} className="font-medium hover:text-brand">{title}</Link><p className="text-xs text-muted">{subtitle ? `${subtitle} · ` : ""}Uploaded {formatDateTime(created)} · {timeAgo(created)}</p>
-          {reason && <p className="mt-1 text-sm text-danger">Reason: {reason}</p>}</div>
+        {thumbUrl && (
+          <Link href={link} className="relative h-14 w-10 shrink-0 overflow-hidden rounded-lg bg-black">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={mediaSrc(thumbUrl, status)} alt={`${title} thumbnail`} className="h-full w-full object-cover" data-testid="studio-thumb" />
+          </Link>
+        )}
+        <div className="min-w-0 basis-full sm:basis-0 sm:flex-1">
+          <Link href={link} className="font-medium hover:text-brand">{title}</Link>
+          <p className="text-xs text-muted">
+            {subtitle ? `${subtitle} · ` : ""}
+            {duration != null ? `${formatTime(duration)} · ` : ""}
+            Uploaded {formatDateTime(created)} · {timeAgo(created)}
+          </p>
+          {reason && <p className="mt-1 text-sm text-danger">Reason: {reason}</p>}
+        </div>
         <StatusBadge status={status} />
         <Button variant="ghost" size="icon" aria-label={`Edit ${title}`} onClick={() => setEdit({ kind, id, title, description: item.description })}><Pencil className="h-4 w-4" /></Button>
         <Button variant="ghost" size="icon" aria-label={`Delete ${title}`} onClick={() => confirm(`Delete “${title}” permanently?`) && del.mutate({ kind, id })}><Trash2 className="h-4 w-4 text-danger" /></Button>
@@ -52,8 +67,8 @@ function Studio() {
       {active.isError && <ErrorState error={active.error} retry={() => active.refetch()} />}
       {active.data?.length === 0 && <EmptyState title={`No ${tab} yet`} action={<Link href="/upload"><Button size="sm">Upload one</Button></Link>} />}
       <div className="space-y-2">
-        {tab === "videos" && videos.data?.map((v) => <Row key={v.id} kind="video" id={v.id} title={v.title} status={v.status} reason={v.rejection_reason} created={v.created_at} link={`/?v=${v.id}`} />)}
-        {tab === "episodes" && episodes.data?.map((e) => <Row key={e.id} kind="episode" id={e.id} title={e.title} subtitle={e.podcast_title} status={e.status} reason={e.rejection_reason} created={e.created_at} link={`/episodes/${e.id}`} />)}
+        {tab === "videos" && videos.data?.map((v) => <Row key={v.id} kind="video" id={v.id} title={v.title} status={v.status} reason={v.rejection_reason} created={v.created_at} link={`/?v=${v.id}`} thumbUrl={v.thumbnail_url} duration={v.duration_seconds} />)}
+        {tab === "episodes" && episodes.data?.map((e) => <Row key={e.id} kind="episode" id={e.id} title={e.title} subtitle={e.podcast_title} status={e.status} reason={e.rejection_reason} created={e.created_at} link={`/episodes/${e.id}`} thumbUrl={e.cover_url} />)}
       </div>
       <Modal open={!!edit} onClose={() => setEdit(null)} title="Edit details">
         {edit && (

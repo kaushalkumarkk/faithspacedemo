@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { formatTime } from "@/lib/utils";
 import { Button } from "./ui";
 
-const MAX_SECONDS = 60;
+const MAX_SECONDS = 90;
 const MIME_CANDIDATES = ["video/mp4;codecs=avc1,mp4a.40.2", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm", "video/mp4"];
 
 function describeError(e: unknown): string {
@@ -16,7 +16,7 @@ function describeError(e: unknown): string {
 }
 
 /** Browser camera recorder built on getUserMedia + MediaRecorder. Hands back a File for the normal upload flow. */
-export function Recorder({ onRecorded }: { onRecorded: (file: File) => void }) {
+export function Recorder({ onRecorded }: { onRecorded: (file: File, durationSeconds?: number) => void }) {
   const [state, setState] = useState<"idle" | "starting" | "live" | "recording" | "review">("idle");
   const [error, setError] = useState<string | null>(null);
   const [secs, setSecs] = useState(0);
@@ -88,7 +88,7 @@ export function Recorder({ onRecorded }: { onRecorded: (file: File) => void }) {
         {(state === "live" || state === "recording") && <video ref={live} muted playsInline className="h-full w-full -scale-x-100 object-cover" aria-label="Camera preview" />}
         {state === "review" && reviewUrl && <video src={reviewUrl} controls playsInline className="h-full w-full object-contain" aria-label="Recording preview" data-testid="recording-preview" />}
         {(state === "idle" || state === "starting") && (
-          <div className="grid h-full place-items-center p-6 text-center text-white/80"><div className="space-y-2"><Camera className="mx-auto h-8 w-8" /><p className="text-sm">{state === "starting" ? "Waiting for camera permission…" : "Record a short vertical video (up to 60s)"}</p></div></div>
+          <div className="grid h-full place-items-center p-6 text-center text-white/80"><div className="space-y-2"><Camera className="mx-auto h-8 w-8" /><p className="text-sm">{state === "starting" ? "Waiting for camera permission…" : "Record a short vertical video (up to 90s)"}</p></div></div>
         )}
         {state === "recording" && <span className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-xs text-white"><span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />REC {formatTime(secs)}</span>}
       </div>
@@ -100,7 +100,7 @@ export function Recorder({ onRecorded }: { onRecorded: (file: File) => void }) {
         {state === "review" && (
           <>
             <Button type="button" variant="outline" onClick={retake} data-testid="rec-retake"><RefreshCw className="h-4 w-4" />Retake</Button>
-            <Button type="button" onClick={() => pending.current && onRecorded(pending.current)} data-testid="rec-use">Use this recording</Button>
+            <Button type="button" onClick={() => pending.current && onRecorded(pending.current, secs)} data-testid="rec-use">Use this recording</Button>
           </>
         )}
       </div>

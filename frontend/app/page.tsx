@@ -1,6 +1,6 @@
 "use client";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp, Film } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -27,6 +27,7 @@ function Feed() {
   });
   const deepVideo = useQuery({ queryKey: ["video", deep, user?.id ?? 0], queryFn: () => api<Video>(`/videos/${deep}`), enabled: !!deep });
 
+  const totalCount = feed.data?.pages[0]?.total ?? 0;
   const videos = useMemo(() => {
     const list = feed.data?.pages.flatMap((p) => p.items) ?? [];
     if (deepVideo.data && !list.some((v) => v.id === deepVideo.data!.id)) return [deepVideo.data, ...list];
@@ -37,13 +38,18 @@ function Feed() {
 
   const onScroll = useCallback(() => {
     const el = scroller.current;
-    if (!el) return;
-    const i = Math.round(el.scrollTop / el.clientHeight);
+    if (!el || !el.clientHeight) return;
+    const i = Math.max(0, Math.min(videos.length - 1, Math.round(el.scrollTop / el.clientHeight)));
     setActive(i);
-    if (i >= videos.length - 2 && feed.hasNextPage && !feed.isFetchingNextPage) feed.fetchNextPage();
+    if (i >= videos.length - 3 && feed.hasNextPage && !feed.isFetchingNextPage) feed.fetchNextPage();
   }, [videos.length, feed]);
 
-  const go = (d: number) => scroller.current?.scrollTo({ top: Math.max(0, Math.min(videos.length - 1, active + d)) * scroller.current.clientHeight, behavior: "smooth" });
+  const go = useCallback((d: number) => {
+    const el = scroller.current;
+    if (!el) return;
+    const next = Math.max(0, Math.min(videos.length - 1, active + d));
+    el.scrollTo({ top: next * el.clientHeight, behavior: "smooth" });
+  }, [active, videos.length]);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -53,7 +59,7 @@ function Feed() {
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  });
+  }, [go]);
 
   const height = "h-[calc(100dvh-3.5rem-3.5rem)] lg:h-[calc(100dvh-3.5rem)]";
 
@@ -79,6 +85,10 @@ function Feed() {
           </div>
         ))}
         {feed.isFetchingNextPage && <p className="py-4 text-center text-sm text-muted">Loading more…</p>}
+      </div>
+
+      <div className="pointer-events-none absolute left-4 top-3 z-10 rounded-full bg-black/55 px-2.5 py-1 text-xs font-medium text-white backdrop-blur" data-testid="feed-counter">
+        {active + 1} / {Math.max(totalCount, videos.length)}
       </div>
 
       <div className="absolute right-4 top-1/2 hidden -translate-y-1/2 flex-col gap-2 lg:flex" style={{ right: commentsFor ? "25rem" : "1rem" }}>

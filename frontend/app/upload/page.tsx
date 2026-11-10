@@ -1,7 +1,7 @@
 "use client";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, FileVideo, Headphones, Mic, Video as VideoIcon, X } from "lucide-react";
+import { Camera, CheckCircle2, FileVideo, Headphones, Mic, Video as VideoIcon, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -12,11 +12,12 @@ import { Gate } from "@/components/gate";
 import { Recorder } from "@/components/recorder";
 import { Button, Card, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
 import { api, CATEGORIES, ApiError, uploadFile, type Podcast } from "@/lib/api";
-import { cn, formatBytes } from "@/lib/utils";
+import { cn, formatBytes, formatTime } from "@/lib/utils";
 
 const VIDEO_TYPES = ["video/mp4", "video/webm"];
 const AUDIO_TYPES = ["audio/mpeg", "audio/mp3", "audio/mp4", "audio/x-m4a", "audio/m4a"];
-const MAX_VIDEO = 100, MAX_AUDIO = 60; // MB — mirrors backend defaults; the server is authoritative.
+const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
+const MAX_VIDEO = 100, MAX_AUDIO = 60, MAX_IMAGE = 5; // MB — mirrors backend defaults; the server is authoritative.
 
 function validate(file: File, kind: "video" | "audio" | "episode"): string | null {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
@@ -42,36 +43,80 @@ function VideoUpload() {
   const [mode, setMode] = useState<"file" | "record">("file");
   const [fileError, setFileError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
-  const [thumb, setThumb] = useState<string | null>(null);
+  const [thumbUrl, setThumbUrl] = useState<string | null>(null);
+  const [thumbBlob, setThumbBlob] = useState<Blob | null>(null);
+  const [thumbName, setThumbName] = useState<string>("thumbnail.jpg");
+  const [thumbError, setThumbError] = useState<string | null>(null);
+  const [customThumb, setCustomThumb] = useState(false);
+  const [durationSec, setDurationSec] = useState<number | null>(null);
   const [pct, setPct] = useState(0);
-  const [phase, setPhase] = useState<"idle" | "uploading" | "saving" | "done">("idle");
+  const [phase, setPhase] = useState<"idle" | "uploading" | "thumbnail" | "saving" | "done">("idle");
   const [err, setErr] = useState<string | null>(null);
   const [assetId, setAssetId] = useState<number | null>(null);
+  const [thumbAssetId, setThumbAssetId] = useState<number | null>(null);
   const cancelRef = useRef<(() => void) | null>(null);
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
   const { register, handleSubmit, reset, formState: { errors } } = useForm<VideoForm>({ resolver: zodResolver(videoSchema), defaultValues: { category: "" } });
 
   useEffect(() => {
-    if (!file) { setPreview(null); setThumb(null); return; }
+    if (!file) { setPreview(null); setThumbUrl(null); setThumbBlob(null); return; }
     const url = URL.createObjectURL(file);
     setPreview(url);
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
-  // Thumbnail preview: grab a frame from the selected file (preview only; not persisted).
-  const grabThumb = (v: HTMLVideoElement) => {
+  useEffect(() => {
+    return () => {
+      if (thumbUrl && thumbUrl.startsWith("blob:")) URL.revokeObjectURL(thumbUrl);
+    };
+  }, [thumbUrl]);
+
+  const captureFrame = (v: HTMLVideoElement, force = false) => {
+    if (customThumb && !force) return;
+    if (!v.videoWidth || !v.videoHeight) return;
     try {
       const c = document.createElement("canvas");
       c.width = v.videoWidth; c.height = v.videoHeight;
       c.getContext("2d")?.drawImage(v, 0, 0);
-      setThumb(c.toDataURL("image/jpeg", 0.7));
-    } catch { /* tainted/unsupported: no thumbnail */ }
+      c.toBlob((blob) => {
+        if (!blob) return;
+        setThumbBlob(blob);
+        setThumbName("thumbnail.jpg");
+        setThumbAssetId(null);
+        setCustomThumb(false);
+        setThumbUrl(URL.createObjectURL(blob));
+      }, "image/jpeg", 0.8);
+    } catch { /* tainted/unsupported: no auto-thumbnail */ }
   };
 
-  const pick = (f: File) => {
+  const readDuration = (v: HTMLVideoElement) => {
+    const d = isFinite(v.duration) && v.duration > 0
+      ? Math.round(v.duration)
+      : (v.seekable.length ? Math.round(v.seekable.end(v.seekable.length - 1)) : null);
+    if (d && d > 0) setDurationSec((prev) => prev ?? d);
+  };
+
+  const pick = (f: File, recordedDuration?: number) => {
     const e = validate(f, "video");
     setFileError(e);
-    setErr(null); setAssetId(null); setPhase("idle"); setPct(0);
+    setErr(null); setAssetId(null); setThumbAssetId(null); setPhase("idle"); setPct(0);
+    setCustomThumb(false); setThumbError(null); setThumbBlob(null); setThumbUrl(null);
+    setDurationSec(recordedDuration && recordedDuration > 0 ? recordedDuration : null);
     setFile(e ? null : f);
+  };
+
+  const pickThumbnail = (f: File | null) => {
+    if (!f) return;
+    if (!IMAGE_TYPES.includes(f.type) || f.size > MAX_IMAGE * 1048576) {
+      setThumbError(`Thumbnail must be a PNG, JPG or WebP up to ${MAX_IMAGE} MB.`);
+      return;
+    }
+    setThumbError(null);
+    setCustomThumb(true);
+    setThumbBlob(f);
+    setThumbName(f.name);
+    setThumbAssetId(null);
+    setThumbUrl(URL.createObjectURL(f));
   };
 
   const submit = async (v: VideoForm) => {
@@ -86,8 +131,25 @@ function VideoUpload() {
         id = (await up.promise).id;
         setAssetId(id);
       }
+      let tid = thumbAssetId;
+      if (tid === null && thumbBlob) {
+        setPhase("thumbnail");
+        const tup = uploadFile("image", thumbBlob, thumbName, () => {});
+        tid = (await tup.promise).id;
+        setThumbAssetId(tid);
+      }
       setPhase("saving");
-      await api("/videos", { method: "POST", json: { asset_id: id, title: v.title, description: v.description ?? "", category: v.category } });
+      await api("/videos", {
+        method: "POST",
+        json: {
+          asset_id: id,
+          thumbnail_asset_id: tid,
+          duration_seconds: durationSec,
+          title: v.title,
+          description: v.description ?? "",
+          category: v.category,
+        },
+      });
       setPhase("done");
       qc.invalidateQueries({ queryKey: ["my-videos"] });
       toast.success("Uploaded — your video is pending moderation");
@@ -104,15 +166,15 @@ function VideoUpload() {
       <Card className="mx-auto max-w-lg space-y-3 p-8 text-center" data-testid="upload-done">
         <CheckCircle2 className="mx-auto h-10 w-10 text-success" />
         <h2 className="font-display text-2xl">Submitted for moderation</h2>
-        <p className="text-sm text-muted">Your video is stored and <b>pending</b>. It will appear in the public feed only after an admin approves it.</p>
+        <p className="text-sm text-muted">Your video and thumbnail are stored and <b>pending</b>. It will appear in the public feed only after an admin approves it.</p>
         <div className="flex justify-center gap-2">
           <Link href="/studio"><Button>View in my studio</Button></Link>
-          <Button variant="outline" onClick={() => { setFile(null); setAssetId(null); setPhase("idle"); reset(); }}>Upload another</Button>
+          <Button variant="outline" onClick={() => { setFile(null); setAssetId(null); setThumbAssetId(null); setThumbBlob(null); setThumbUrl(null); setDurationSec(null); setPhase("idle"); reset(); }}>Upload another</Button>
         </div>
       </Card>
     );
 
-  const busy = phase === "uploading" || phase === "saving";
+  const busy = phase === "uploading" || phase === "thumbnail" || phase === "saving";
   return (
     <form onSubmit={handleSubmit(submit)} className="grid gap-6 lg:grid-cols-2" noValidate>
       <div className="space-y-3">
@@ -122,20 +184,53 @@ function VideoUpload() {
               className={cn("flex items-center gap-2 rounded-lg px-4 py-1.5 text-sm font-medium", mode === m && "bg-surface shadow-sm")}><Icon className="h-4 w-4" />{label}</button>
           ))}
         </div>
-        {mode === "record" && !file && <Recorder onRecorded={(f) => { pick(f); setMode("file"); }} />}
+        {mode === "record" && !file && <Recorder onRecorded={(f, secs) => { pick(f, secs); setMode("file"); }} />}
         {(mode === "file" || file) && !file && (
-          <FileDrop accept=".mp4,.webm,video/mp4,video/webm" label="Drag & drop a video here" hint={`MP4 or WebM · up to ${MAX_VIDEO} MB`} onFile={pick} testId="video-file-input" />
+          <FileDrop accept=".mp4,.webm,video/mp4,video/webm" label="Drag & drop a video here" hint={`MP4 or WebM · up to 90s / ${MAX_VIDEO} MB`} onFile={(f) => pick(f)} testId="video-file-input" />
         )}
         {fileError && <p role="alert" className="text-sm text-danger" data-testid="file-error">{fileError}</p>}
         {file && preview && (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <div className="mx-auto aspect-[9/16] max-h-[420px] overflow-hidden rounded-2xl bg-black">
-              <video src={preview} controls playsInline className="h-full w-full object-contain" onLoadedData={(e) => grabThumb(e.currentTarget)} data-testid="selected-preview" />
+              <video
+                ref={previewVideoRef}
+                src={preview}
+                controls
+                playsInline
+                className="h-full w-full object-contain"
+                onLoadedMetadata={(e) => readDuration(e.currentTarget)}
+                onLoadedData={(e) => { readDuration(e.currentTarget); captureFrame(e.currentTarget); }}
+                data-testid="selected-preview"
+              />
             </div>
-            <div className="flex items-center gap-3 rounded-xl bg-elevated p-2 text-sm">
-              {thumb && /* eslint-disable-next-line @next/next/no-img-element */ <img src={thumb} alt="Thumbnail preview" className="h-14 w-10 rounded object-cover" />}
-              <div className="min-w-0 flex-1"><p className="truncate font-medium">{file.name}</p><p className="text-xs text-muted">{formatBytes(file.size)} · {file.type || "video"}</p></div>
-              {!busy && <Button type="button" variant="ghost" size="icon" aria-label="Remove file" onClick={() => { setFile(null); setAssetId(null); }}><X className="h-4 w-4" /></Button>}
+            <div className="flex items-center gap-3 rounded-xl bg-elevated p-2.5 text-sm">
+              {thumbUrl && (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img src={thumbUrl} alt="Thumbnail preview" data-testid="thumb-preview" className="h-14 w-10 shrink-0 rounded object-cover" />
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium">{file.name}</p>
+                <p className="text-xs text-muted">
+                  {formatBytes(file.size)} · {file.type || "video"}
+                  {durationSec !== null && <span data-testid="selected-duration"> · {formatTime(durationSec)}</span>}
+                </p>
+              </div>
+              {!busy && <Button type="button" variant="ghost" size="icon" aria-label="Remove file" onClick={() => { setFile(null); setAssetId(null); setThumbAssetId(null); }}><X className="h-4 w-4" /></Button>}
+            </div>
+
+            <div className="rounded-xl border border-line bg-surface p-3 text-sm space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium">Thumbnail</span>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => previewVideoRef.current && captureFrame(previewVideoRef.current, true)} data-testid="capture-frame-btn">
+                    <Camera className="h-3.5 w-3.5" />Capture current frame
+                  </Button>
+                </div>
+              </div>
+              <input type="file" aria-label="Custom thumbnail" accept="image/png,image/jpeg,image/webp" disabled={busy} className="block w-full text-xs text-muted" data-testid="thumb-file-input"
+                onChange={(e) => pickThumbnail(e.target.files?.[0] ?? null)} />
+              {thumbError && <p role="alert" className="text-xs text-danger">{thumbError}</p>}
+              <p className="text-xs text-muted">Auto-captured from the video, or upload a custom PNG/JPG/WebP thumbnail.</p>
             </div>
           </div>
         )}
@@ -147,7 +242,8 @@ function VideoUpload() {
         <Field label="Category" error={errors.category?.message}>
           <Select {...register("category")} disabled={busy}><option value="">Select…</option>{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</Select>
         </Field>
-        {phase === "uploading" && <ProgressBar pct={pct} label="Uploading" />}
+        {phase === "uploading" && <ProgressBar pct={pct} label="Uploading video" />}
+        {phase === "thumbnail" && <p className="text-sm text-muted">Uploading thumbnail…</p>}
         {phase === "saving" && <p className="text-sm text-muted">Saving…</p>}
         {err && <p role="alert" className="rounded-lg bg-danger/10 p-2 text-sm text-danger" data-testid="upload-error">{err}</p>}
         <div className="flex gap-2">

@@ -1,8 +1,9 @@
 "use client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Avatar, Button, ErrorState, Input, PageHeader, Select, Skeleton } from "@/components/ui";
+import { Avatar, Button, ErrorState, Input, Modal, PageHeader, Select, Skeleton } from "@/components/ui";
 import { api, type Page, type User } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -13,6 +14,7 @@ export default function AdminUsers() {
   const [dq, setDq] = useState("");
   const [role, setRole] = useState("");
   const [page, setPage] = useState(1);
+  const [removing, setRemoving] = useState<User | null>(null);
   useEffect(() => { const t = setTimeout(() => { setDq(q); setPage(1); }, 250); return () => clearTimeout(t); }, [q]);
   const users = useQuery({ queryKey: ["admin-users", dq, role, page], queryFn: () => api<Page<User>>(`/users?q=${encodeURIComponent(dq)}&role=${role}&page=${page}&page_size=15`) });
   const toggle = useMutation({
@@ -20,9 +22,21 @@ export default function AdminUsers() {
     onSuccess: () => { toast.success("User updated"); qc.invalidateQueries({ queryKey: ["admin-users"] }); },
     onError: (e) => toast.error((e as Error).message),
   });
+  const removeUser = useMutation({
+    mutationFn: (u: User) => api(`/users/${u.id}`, { method: "DELETE" }),
+    onSuccess: (_d, u) => {
+      toast.success(`Removed ${u.display_name}`);
+      setRemoving(null);
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+      qc.invalidateQueries({ queryKey: ["admin-overview"] });
+      qc.invalidateQueries({ queryKey: ["mod-history"] });
+      qc.invalidateQueries({ queryKey: ["feed"] });
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
   return (
     <>
-      <PageHeader title="Users" subtitle="Suspended users cannot log in or use their existing token." />
+      <PageHeader title="Users" subtitle="Suspend or permanently remove accounts." />
       <div className="mb-4 flex flex-col gap-2 sm:flex-row">
         <Input type="search" aria-label="Search users" placeholder="Search name or email…" value={q} onChange={(e) => setQ(e.target.value)} />
         <Select aria-label="Role" className="sm:w-40" value={role} onChange={(e) => { setRole(e.target.value); setPage(1); }}>
@@ -37,11 +51,20 @@ export default function AdminUsers() {
             <thead className="border-b border-line text-left text-xs text-muted"><tr><th className="p-3">User</th><th className="p-3">Role</th><th className="p-3">Status</th><th className="p-3 text-right">Action</th></tr></thead>
             <tbody>
               {users.data.items.map((u) => (
-                <tr key={u.id} className="border-b border-line/60 last:border-0">
+                <tr key={u.id} className="border-b border-line/60 last:border-0" data-testid="admin-user-row">
                   <td className="p-3"><div className="flex items-center gap-2"><Avatar name={u.display_name} url={u.avatar_url} size={28} /><div><p className="font-medium">{u.display_name}</p><p className="text-xs text-muted">{u.email}</p></div></div></td>
                   <td className="p-3 capitalize">{u.role}</td>
                   <td className="p-3">{u.is_active ? <span className="text-success">Active</span> : <span className="text-danger">Suspended</span>}</td>
-                  <td className="p-3 text-right">{u.id !== me?.id && <Button size="sm" variant={u.is_active ? "outline" : "primary"} onClick={() => toggle.mutate(u)}>{u.is_active ? "Suspend" : "Reinstate"}</Button>}</td>
+                  <td className="p-3 text-right">
+                    {u.id !== me?.id && (
+                      <div className="inline-flex gap-2">
+                        <Button size="sm" variant={u.is_active ? "outline" : "primary"} onClick={() => toggle.mutate(u)}>{u.is_active ? "Suspend" : "Reinstate"}</Button>
+                        {u.role !== "admin" && (
+                          <Button size="sm" variant="danger" data-testid="remove-user" onClick={() => setRemoving(u)}><Trash2 className="h-4 w-4" />Remove</Button>
+                        )}
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -54,6 +77,15 @@ export default function AdminUsers() {
           <Button size="sm" variant="outline" disabled={page * 15 >= users.data.total} onClick={() => setPage(page + 1)}>Next</Button>
         </div>
       )}
+      <Modal open={!!removing} onClose={() => setRemoving(null)} title={`Remove ${removing?.display_name ?? ""}?`}>
+        <div className="space-y-3">
+          <p className="text-sm text-muted">This permanently deletes the user account and all of their videos, podcasts, comments, and media files.</p>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setRemoving(null)}>Cancel</Button>
+            <Button type="button" variant="danger" data-testid="confirm-remove-user" loading={removeUser.isPending} onClick={() => removing && removeUser.mutate(removing)}>Remove permanently</Button>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }

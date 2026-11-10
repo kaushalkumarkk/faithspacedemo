@@ -52,6 +52,10 @@ class Video(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     asset_id: Mapped[int] = mapped_column(ForeignKey("media_assets.id", ondelete="RESTRICT"))
+    thumbnail_asset_id: Mapped[int | None] = mapped_column(
+        ForeignKey("media_assets.id", ondelete="SET NULL"), nullable=True
+    )
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     title: Mapped[str] = mapped_column(String(150))
     description: Mapped[str] = mapped_column(Text, default="")
     category: Mapped[str] = mapped_column(String(40), index=True)
@@ -61,7 +65,8 @@ class Video(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     owner = relationship("User", lazy="joined")
-    asset = relationship("MediaAsset", lazy="joined")
+    asset = relationship("MediaAsset", foreign_keys=[asset_id], lazy="joined")
+    thumbnail = relationship("MediaAsset", foreign_keys=[thumbnail_asset_id], lazy="joined")
     __table_args__ = (Index("ix_videos_status_published", "status", "published_at"),)
 
 
@@ -126,6 +131,15 @@ class Follow(Base):
     __table_args__ = (UniqueConstraint("follower_id", "followee_id", name="uq_follow_pair"),)
 
 
+class UserBlock(Base):
+    __tablename__ = "user_blocks"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    blocker_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    blocked_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    __table_args__ = (UniqueConstraint("blocker_id", "blocked_id", name="uq_block_pair"),)
+
+
 class Notification(Base):
     __tablename__ = "notifications"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -142,7 +156,7 @@ class Report(Base):
     __tablename__ = "reports"
     id: Mapped[int] = mapped_column(primary_key=True)
     reporter_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    target_type: Mapped[str] = mapped_column(String(10))  # video | episode | comment
+    target_type: Mapped[str] = mapped_column(String(10))  # video | episode | comment | user | message
     target_id: Mapped[int] = mapped_column(Integer)
     reason: Mapped[str] = mapped_column(String(300))
     status: Mapped[str] = mapped_column(String(10), default="open", index=True)  # open|resolved|dismissed

@@ -1,11 +1,11 @@
 "use client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, CheckCheck, Search, Send } from "lucide-react";
+import { ArrowLeft, Ban, Check, CheckCheck, Flag, Search, Send, ShieldCheck } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Gate } from "@/components/gate";
-import { Avatar, Button, EmptyState, ErrorState, Input, PageHeader, Skeleton } from "@/components/ui";
+import { Avatar, Button, EmptyState, ErrorState, Input, Modal, PageHeader, Skeleton, Textarea } from "@/components/ui";
 import { api, type Conversation, type Message, type User } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn, formatDateTime, timeAgo } from "@/lib/utils";
@@ -40,27 +40,59 @@ function Thread({ other, onBack }: { other: User; onBack: () => void }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const [text, setText] = useState("");
+  const [reportTarget, setReportTarget] = useState<{ type: "user" | "message"; id: number; label: string } | null>(null);
+  const [reason, setReason] = useState("");
   const bottom = useRef<HTMLDivElement>(null);
-  const q = useQuery({ queryKey: ["thread", other.id], queryFn: () => api<Message[]>(`/messages/with/${other.id}`), refetchInterval: 4000 });
+  const q = useQuery({ queryKey: ["thread", other.id], queryFn: () => api<Message[]>(`/messages/with/${other.id}`), refetchInterval: 3000 });
+
   const send = useMutation({
     mutationFn: () => api<Message>(`/messages/with/${other.id}`, { method: "POST", json: { body: text.trim() } }),
     onSuccess: () => { setText(""); qc.invalidateQueries({ queryKey: ["thread", other.id] }); qc.invalidateQueries({ queryKey: ["conversations"] }); },
     onError: (e) => toast.error((e as Error).message),
   });
+  const toggleBlock = useMutation({
+    mutationFn: () => api<User>(`/users/${other.id}/block`, { method: other.is_blocked ? "DELETE" : "POST" }),
+    onSuccess: (updated) => {
+      toast.success(updated.is_blocked ? `Blocked ${other.display_name}` : `Unblocked ${other.display_name}`);
+      qc.invalidateQueries({ queryKey: ["user", String(other.id)] });
+      qc.invalidateQueries({ queryKey: ["conversations"] });
+      qc.invalidateQueries({ queryKey: ["feed"] });
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const submitReport = useMutation({
+    mutationFn: () => api("/reports", { method: "POST", json: { target_type: reportTarget!.type, target_id: reportTarget!.id, reason } }),
+    onSuccess: () => { toast.success("Report sent to moderators"); setReportTarget(null); setReason(""); },
+    onError: (e) => toast.error((e as Error).message),
+  });
+
   // reading a thread marks it read on the server; refresh the badges
   useEffect(() => { if (q.data) { qc.invalidateQueries({ queryKey: ["msg-unread"] }); qc.invalidateQueries({ queryKey: ["conversations"] }); } }, [q.dataUpdatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { bottom.current?.scrollIntoView({ block: "end" }); }, [q.data?.length]);
 
   const lastMine = q.data ? [...q.data].reverse().find((m) => m.sender_id === user?.id)?.id : undefined;
-  const submit = () => { if (text.trim() && !send.isPending) send.mutate(); };
+  const blocked = Boolean(other.is_blocked || other.blocked_by_target);
+  const submit = () => { if (text.trim() && !send.isPending && !blocked) send.mutate(); };
 
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label={`Conversation with ${other.display_name}`}>
-      <header className="flex items-center gap-3 border-b border-line p-3">
+      <header className="flex items-center gap-2 border-b border-line p-3">
         <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Back to conversations" onClick={onBack}><ArrowLeft className="h-5 w-5" /></Button>
         <Avatar name={other.display_name} url={other.avatar_url} size={36} />
-        <div><p className="font-medium leading-tight" data-testid="thread-name">{other.display_name}</p><p className="text-xs capitalize text-muted">{other.role}</p></div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium leading-tight" data-testid="thread-name">{other.display_name}</p>
+          <p className="text-xs capitalize text-muted">{other.role}</p>
+        </div>
+        <Button size="sm" variant="ghost" aria-label="Report user" data-testid="report-user-btn"
+          onClick={() => { setReason(""); setReportTarget({ type: "user", id: other.id, label: other.display_name }); }}>
+          <Flag className="h-4 w-4" />
+        </Button>
+        <Button size="sm" variant={other.is_blocked ? "secondary" : "outline"} data-testid="block-user-btn"
+          loading={toggleBlock.isPending} onClick={() => toggleBlock.mutate()}>
+          {other.is_blocked ? <><ShieldCheck className="h-4 w-4" /><span className="hidden sm:inline">Unblock</span></> : <><Ban className="h-4 w-4 text-danger" /><span className="hidden sm:inline">Block</span></>}
+        </Button>
       </header>
+
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4" data-testid="thread">
         {q.isLoading && <Skeleton className="h-12" />}
         {q.isError && <ErrorState error={q.error} retry={() => q.refetch()} />}
@@ -68,8 +100,21 @@ function Thread({ other, onBack }: { other: User; onBack: () => void }) {
         {q.data?.map((m) => {
           const mine = m.sender_id === user?.id;
           return (
-            <div key={m.id} className={cn("flex flex-col", mine ? "items-end" : "items-start")}>
-              <div title={formatDateTime(m.created_at)} data-testid="message" className={cn("max-w-[80%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 text-sm", mine ? "rounded-br-md bg-brand text-brand-fg" : "rounded-bl-md bg-elevated")}>{m.body}</div>
+            <div key={m.id} className={cn("group flex flex-col", mine ? "items-end" : "items-start")}>
+              <div className="flex max-w-[85%] items-center gap-1.5">
+                <div title={formatDateTime(m.created_at)} data-testid="message" className={cn("whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 text-sm", mine ? "rounded-br-md bg-brand text-brand-fg" : "rounded-bl-md bg-elevated")}>{m.body}</div>
+                {!mine && (
+                  <button
+                    type="button"
+                    aria-label="Report message"
+                    data-testid="report-message-btn"
+                    onClick={() => { setReason(""); setReportTarget({ type: "message", id: m.id, label: "this message" }); }}
+                    className="rounded p-1 text-muted opacity-60 transition hover:bg-elevated hover:text-fg hover:opacity-100"
+                  >
+                    <Flag className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
               <span className="mt-0.5 flex items-center gap-1 text-[10px] text-muted">
                 {timeAgo(m.created_at)}
                 {mine && m.id === lastMine && (m.read_at ? <span className="flex items-center gap-0.5 text-success" data-testid="seen"><CheckCheck className="h-3 w-3" />Seen</span> : <span className="flex items-center gap-0.5"><Check className="h-3 w-3" />Sent</span>)}
@@ -79,12 +124,30 @@ function Thread({ other, onBack }: { other: User; onBack: () => void }) {
         })}
         <div ref={bottom} />
       </div>
-      <form onSubmit={(e) => { e.preventDefault(); submit(); }} className="flex items-end gap-2 border-t border-line p-3">
-        <textarea aria-label="Write a message" rows={1} maxLength={2000} value={text} onChange={(e) => setText(e.target.value)} placeholder="Write a message…"
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
-          className="max-h-32 min-h-10 flex-1 resize-none rounded-xl border border-line bg-bg px-3 py-2 text-sm" data-testid="msg-input" />
-        <Button type="submit" size="icon" aria-label="Send message" loading={send.isPending} disabled={!text.trim()} data-testid="msg-send"><Send className="h-4 w-4" /></Button>
-      </form>
+
+      {blocked ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-elevated/70 p-3 text-xs text-muted" data-testid="msg-blocked-banner">
+          <span>{other.is_blocked ? `You blocked ${other.display_name}. Unblock to send messages.` : "Messaging is unavailable because this user blocked you."}</span>
+          {other.is_blocked && <Button size="sm" variant="outline" onClick={() => toggleBlock.mutate()} loading={toggleBlock.isPending}>Unblock</Button>}
+        </div>
+      ) : (
+        <form onSubmit={(e) => { e.preventDefault(); submit(); }} className="flex items-end gap-2 border-t border-line p-3">
+          <textarea aria-label="Write a message" rows={1} maxLength={2000} value={text} onChange={(e) => setText(e.target.value)} placeholder="Write a message…"
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
+            className="max-h-32 min-h-10 flex-1 resize-none rounded-xl border border-line bg-bg px-3 py-2 text-sm" data-testid="msg-input" />
+          <Button type="submit" size="icon" aria-label="Send message" loading={send.isPending} disabled={!text.trim()} data-testid="msg-send"><Send className="h-4 w-4" /></Button>
+        </form>
+      )}
+
+      <Modal open={!!reportTarget} onClose={() => setReportTarget(null)} title={`Report ${reportTarget?.label ?? ""}`}>
+        <form onSubmit={(e) => { e.preventDefault(); submitReport.mutate(); }} className="space-y-3">
+          <Textarea aria-label="Reason" required minLength={3} maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why are you reporting this?" />
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setReportTarget(null)}>Cancel</Button>
+            <Button type="submit" loading={submitReport.isPending} disabled={reason.trim().length < 3} data-testid="submit-msg-report">Send report</Button>
+          </div>
+        </form>
+      </Modal>
     </section>
   );
 }
@@ -93,7 +156,7 @@ function Inbox() {
   const router = useRouter();
   const params = useSearchParams();
   const selected = Number(params.get("u")) || null;
-  const convos = useQuery({ queryKey: ["conversations"], queryFn: () => api<Conversation[]>("/messages/conversations"), refetchInterval: 6000 });
+  const convos = useQuery({ queryKey: ["conversations"], queryFn: () => api<Conversation[]>("/messages/conversations"), refetchInterval: 4000 });
   const picked = useQuery({ queryKey: ["user", String(selected)], queryFn: () => api<User>(`/users/${selected}`), enabled: !!selected });
   const other = picked.data;
   const open = (id: number) => router.push(`/messages?u=${id}`);
@@ -101,7 +164,7 @@ function Inbox() {
   return (
     <>
       <PageHeader title="Messages" subtitle="Private one-to-one conversations. Updates every few seconds." />
-      <div className="grid h-[calc(100dvh-15rem)] min-h-[420px] overflow-hidden rounded-2xl border border-line bg-surface lg:grid-cols-[320px_1fr] lg:h-[calc(100dvh-12rem)]">
+      <div className="grid h-[calc(100dvh-13.5rem)] min-h-[380px] overflow-hidden rounded-2xl border border-line bg-surface lg:h-[calc(100dvh-12rem)] lg:grid-cols-[320px_1fr]">
         <aside className={cn("flex min-h-0 flex-col border-line lg:border-r", selected ? "hidden lg:flex" : "flex")}>
           <NewChat onPick={(u) => open(u.id)} />
           <div className="min-h-0 flex-1 overflow-y-auto">
@@ -121,7 +184,7 @@ function Inbox() {
             ))}
           </div>
         </aside>
-        <div className={cn("min-h-0", selected ? "block" : "hidden lg:block")}>
+        <div className={cn("min-h-0 flex-col", selected ? "flex" : "hidden lg:flex")}>
           {other ? <Thread key={other.id} other={other} onBack={() => router.push("/messages")} />
             : selected && picked.isLoading ? <Skeleton className="m-4 h-24" />
             : selected && picked.isError ? <div className="p-6"><ErrorState error={picked.error} /></div>

@@ -49,6 +49,8 @@ class UserOut(BaseModel):
     following_count: int = 0
     video_count: int = 0
     is_following: bool = False
+    is_blocked: bool = False
+    blocked_by_target: bool = False
     created_at: datetime
 
 
@@ -81,6 +83,8 @@ class AssetOut(BaseModel):
 # ---------- videos ----------
 class VideoCreate(BaseModel):
     asset_id: int
+    thumbnail_asset_id: int | None = None
+    duration_seconds: int | None = Field(default=None, ge=0, le=3600)
     title: str = Field(min_length=2, max_length=150)
     description: str = Field(default="", max_length=2000)
     category: str
@@ -97,6 +101,8 @@ class VideoUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=2, max_length=150)
     description: str | None = Field(default=None, max_length=2000)
     category: str | None = None
+    thumbnail_asset_id: int | None = None
+    duration_seconds: int | None = Field(default=None, ge=0, le=3600)
 
     @field_validator("category")
     @classmethod
@@ -114,6 +120,8 @@ class VideoOut(BaseModel):
     status: str
     rejection_reason: str | None
     video_url: str
+    thumbnail_url: str | None = None
+    duration_seconds: int | None = None
     mime_type: str
     owner: UserOut
     like_count: int
@@ -222,7 +230,7 @@ class NotificationOut(BaseModel):
 
 
 class ReportCreate(BaseModel):
-    target_type: Literal["video", "episode", "comment"]
+    target_type: Literal["video", "episode", "comment", "user", "message"]
     target_id: int
     reason: str = Field(min_length=3, max_length=300)
 
@@ -232,6 +240,7 @@ class ReportOut(BaseModel):
     target_type: str
     target_id: int
     target_title: str
+    target_user_id: int | None = None
     reason: str
     status: str
     reporter: UserOut
@@ -257,6 +266,8 @@ class ModerationItem(BaseModel):
     status: str
     owner: UserOut
     media_url: str
+    thumbnail_url: str | None = None
+    duration_seconds: int | None = None
     mime_type: str
     category: str
     rejection_reason: str | None

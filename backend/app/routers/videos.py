@@ -1,5 +1,3 @@
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -7,8 +5,11 @@ from sqlalchemy.orm import Session
 from .. import schemas as s
 from ..db import get_db
 from ..deps import PageParams, creator_user, current_user, err, optional_user
-from ..models import Comment, Like, Notification, User, Video
-from ..services import audit, get_asset_owned, notify, user_out, video_out
+from ..models import Comment, Episode, Like, User, Video
+from ..services import (
+    audit, blocked_peer_ids, delete_asset_if_unused, get_asset_owned, notify, user_out, video_out,
+)
+from ..storage import delete_key
 
 videos_router = APIRouter(prefix="/videos", tags=["videos"])
 comments_router = APIRouter(tags=["comments"])
@@ -25,8 +26,12 @@ def _visible(v: Video | None, viewer: User | None) -> Video:
 @videos_router.get("", response_model=s.Page[s.VideoOut])
 def feed(q: str | None = None, category: str | None = None, owner_id: int | None = None, pg: PageParams = Depends(),
          viewer: User | None = Depends(optional_user), db: Session = Depends(get_db)):
-    """Public feed: approved videos only."""
+    """Public feed: approved videos only (excludes users blocked by or blocking the viewer)."""
     stmt = select(Video).where(Video.status == "approved")
+    if viewer:
+        blocked = blocked_peer_ids(db, viewer.id)
+        if blocked:
+            stmt = stmt.where(Video.owner_id.notin_(blocked))
     if q:
         stmt = stmt.where(Video.title.ilike(f"%{q}%") | Video.description.ilike(f"%{q}%"))
     if category:
@@ -47,15 +52,20 @@ def mine(user: User = Depends(current_user), db: Session = Depends(get_db)):
 @videos_router.post("", response_model=s.VideoOut, status_code=201)
 def create_video(body: s.VideoCreate, user: User = Depends(creator_user), db: Session = Depends(get_db)):
     asset = get_asset_owned(db, body.asset_id, user, "video")
-    from ..models import Episode
+    thumb = get_asset_owned(db, body.thumbnail_asset_id, user, "image")
 
     if db.scalar(select(Video).where(Video.asset_id == asset.id)) or db.scalar(select(Episode).where(Episode.asset_id == asset.id)):
         raise err(409, "asset_used", "That upload is already attached to a video.")
-    v = Video(owner_id=user.id, asset_id=asset.id, title=body.title.strip(), description=body.description.strip(),
-              category=body.category, status="pending")
+    v = Video(
+        owner_id=user.id, asset_id=asset.id,
+        thumbnail_asset_id=thumb.id if thumb else None,
+        duration_seconds=body.duration_seconds,
+        title=body.title.strip(), description=body.description.strip(),
+        category=body.category, status="pending",
+    )
     db.add(v)
     db.flush()
-    audit(db, user, "video.submit", "video", v.id, {"title": v.title})
+    audit(db, user, "video.submit", "video", v.id, {"title": v.title, "has_thumbnail": bool(thumb), "duration_seconds": body.duration_seconds})
     db.commit()
     db.refresh(v)
     return video_out(db, v, user)
@@ -71,7 +81,11 @@ def update_video(video_id: int, body: s.VideoUpdate, user: User = Depends(curren
     v = db.get(Video, video_id)
     if not v or v.owner_id != user.id:
         raise err(404 if not v else 403, "not_found" if not v else "forbidden", "Video not found or not yours.")
-    for k, val in body.model_dump(exclude_unset=True).items():
+    data = body.model_dump(exclude_unset=True)
+    if "thumbnail_asset_id" in data:
+        thumb = get_asset_owned(db, data.pop("thumbnail_asset_id"), user, "image")
+        v.thumbnail_asset_id = thumb.id if thumb else None
+    for k, val in data.items():
         if val is not None:
             setattr(v, k, val.strip() if isinstance(val, str) else val)
     # An edited approved video goes back through moderation.
@@ -79,26 +93,31 @@ def update_video(video_id: int, body: s.VideoUpdate, user: User = Depends(curren
         v.status, v.published_at = "pending", None
     audit(db, user, "video.edit", "video", v.id)
     db.commit()
+    db.refresh(v)
     return video_out(db, v, user)
 
 
 @videos_router.delete("/{video_id}", status_code=204)
 def delete_video(video_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    from ..models import MediaAsset
-    from ..storage import delete_key
-
     v = db.get(Video, video_id)
     if not v:
         raise err(404, "not_found", "Video not found.")
     if v.owner_id != user.id and user.role != "admin":
         raise err(403, "forbidden", "You can only delete your own videos.")
     asset = v.asset
+    thumb = v.thumbnail
+    if user.role == "admin" and v.owner_id != user.id:
+        from ..models import ModerationAction
+
+        db.add(ModerationAction(admin_id=user.id, target_type="video", target_id=v.id, target_title=v.title[:200],
+                                action="delete", reason="Removed by admin"))
     audit(db, user, "video.delete", "video", v.id, {"title": v.title})
     db.delete(v)
     db.flush()
-    db.delete(asset)
+    keys = [k for k in (delete_asset_if_unused(db, asset), delete_asset_if_unused(db, thumb)) if k]
     db.commit()
-    delete_key(asset.storage_key)
+    for k in keys:
+        delete_key(k)
 
 
 # ---------- likes ----------
@@ -135,7 +154,12 @@ def _comment_out(db, c: Comment, viewer, replies=None) -> s.CommentOut:
 @videos_router.get("/{video_id}/comments", response_model=list[s.CommentOut])
 def list_comments(video_id: int, viewer: User | None = Depends(optional_user), db: Session = Depends(get_db)):
     v = _visible(db.get(Video, video_id), viewer)
-    rows = db.scalars(select(Comment).where(Comment.video_id == v.id).order_by(Comment.created_at, Comment.id)).unique().all()
+    stmt = select(Comment).where(Comment.video_id == v.id)
+    if viewer:
+        blocked = blocked_peer_ids(db, viewer.id)
+        if blocked:
+            stmt = stmt.where(Comment.author_id.notin_(blocked))
+    rows = db.scalars(stmt.order_by(Comment.created_at, Comment.id)).unique().all()
     by_parent: dict[int | None, list[Comment]] = {}
     for c in rows:
         by_parent.setdefault(c.parent_id, []).append(c)

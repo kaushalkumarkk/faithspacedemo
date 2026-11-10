@@ -12,7 +12,7 @@ from sqlalchemy import delete, select  # noqa: E402
 
 from app.db import SessionLocal  # noqa: E402
 from app.models import (  # noqa: E402
-    AuditLog, Comment, Episode, Follow, Like, MediaAsset, ModerationAction, Notification, Podcast, Report, User, Video,
+    AuditLog, Comment, Episode, Follow, Like, MediaAsset, ModerationAction, Notification, Podcast, Report, User, UserBlock, Video,
 )
 from app.storage import delete_key  # noqa: E402
 
@@ -23,7 +23,7 @@ with SessionLocal() as db:
     # users keep their avatars; everything else in media_assets goes
     avatar_ids = {a for a in db.scalars(select(User.avatar_asset_id)) if a}
     keys = [a.storage_key for a in db.scalars(select(MediaAsset)).unique() if a.id not in avatar_ids]
-    for model in (Comment, Like, Notification, Report, ModerationAction, AuditLog, Follow, Video, Episode, Podcast):
+    for model in (Comment, Like, Notification, Report, ModerationAction, AuditLog, Follow, UserBlock, Video, Episode, Podcast):
         db.execute(delete(model))
     db.execute(delete(MediaAsset).where(MediaAsset.id.notin_(avatar_ids or {-1})))
     db.commit()

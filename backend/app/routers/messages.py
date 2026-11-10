@@ -10,7 +10,7 @@ from ..db import get_db
 from ..deps import current_user, err
 from ..models import Message, User
 from ..security import limiter
-from ..services import user_out
+from ..services import is_blocked_between, user_out
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
@@ -68,6 +68,8 @@ def send(other_id: int, body: s.MessageCreate, user: User = Depends(current_user
     other = db.get(User, other_id)
     if not other or not other.is_active:
         raise err(404, "not_found", "That user is not available.")
+    if is_blocked_between(db, user.id, other.id):
+        raise err(403, "blocked", "Messaging is disabled because one of you has blocked the other.")
     limiter.check(f"msg:{user.id}", settings.message_rate_limit)
     text = body.body.strip()
     if not text:

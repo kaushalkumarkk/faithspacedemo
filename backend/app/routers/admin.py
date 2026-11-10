@@ -2,16 +2,17 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from .. import schemas as s
 from ..db import get_db
 from ..deps import PageParams, admin_user, current_user, err
 from ..models import (
-    AuditLog, Comment, Episode, Like, ModerationAction, Notification, Podcast, Report, User, Video,
+    AuditLog, Comment, Episode, Like, Message, ModerationAction, Podcast, Report, User, Video,
 )
-from ..services import audit, notify, user_out
+from ..services import audit, delete_asset_if_unused, notify, user_out
+from ..storage import delete_key
 
 moderation_router = APIRouter(prefix="/admin/moderation", tags=["admin"])
 reports_router = APIRouter(tags=["reports"])
@@ -35,7 +36,10 @@ def _owner(obj) -> User:
 def _item(db: Session, kind: str, obj, admin: User) -> s.ModerationItem:
     return s.ModerationItem(
         type=kind, id=obj.id, title=obj.title, status=obj.status, owner=user_out(db, _owner(obj), admin),
-        media_url=s.media_url(obj.asset), mime_type=obj.asset.mime_type,
+        media_url=s.media_url(obj.asset),
+        thumbnail_url=s.media_url(obj.thumbnail) if kind == "video" else s.media_url(obj.podcast.cover),
+        duration_seconds=obj.duration_seconds if kind == "video" else None,
+        mime_type=obj.asset.mime_type,
         category=obj.category if kind == "video" else obj.podcast.category,
         rejection_reason=obj.rejection_reason, created_at=obj.created_at,
     )
@@ -103,6 +107,47 @@ def restore(kind: Kind, item_id: int, admin: User = Depends(admin_user), db: Ses
     return _moderate(db, admin, kind, item_id, "restore", None)
 
 
+def _remove_content(db: Session, admin: User, kind: Kind, item_id: int, reason: str | None):
+    obj = _get_target(db, kind, item_id)
+    owner = _owner(obj)
+    title = obj.title
+    asset = obj.asset
+    thumb = obj.thumbnail if kind == "video" else None
+    clean_reason = reason.strip() if reason and reason.strip() else None
+
+    db.execute(
+        update(Report)
+        .where(Report.target_type == kind, Report.target_id == item_id, Report.status == "open")
+        .values(status="resolved", resolved_by_id=admin.id)
+    )
+    db.add(ModerationAction(admin_id=admin.id, target_type=kind, target_id=item_id, target_title=title[:200],
+                            action="delete", reason=clean_reason or "Removed by admin"))
+    audit(db, admin, "moderation.delete", kind, item_id, {"title": title, "reason": clean_reason})
+    msg = f"Your {kind} “{title}” was permanently removed by an admin."
+    if clean_reason:
+        msg += f" Reason: {clean_reason}"
+    notify(db, owner.id, "hidden", msg, "/studio")
+    db.delete(obj)
+    db.flush()
+    keys = [k for k in (delete_asset_if_unused(db, asset), delete_asset_if_unused(db, thumb)) if k]
+    db.commit()
+    for k in keys:
+        delete_key(k)
+    return {"status": "deleted", "type": kind, "id": item_id}
+
+
+@moderation_router.post("/{kind}/{item_id}/remove")
+def remove_post(kind: Kind, item_id: int, body: s.ReasonIn | None = None,
+                admin: User = Depends(admin_user), db: Session = Depends(get_db)):
+    return _remove_content(db, admin, kind, item_id, body.reason if body else None)
+
+
+@moderation_router.delete("/{kind}/{item_id}")
+def remove_delete(kind: Kind, item_id: int, reason: str | None = None,
+                  admin: User = Depends(admin_user), db: Session = Depends(get_db)):
+    return _remove_content(db, admin, kind, item_id, reason)
+
+
 @moderation_router.get("/history", response_model=s.Page[s.ModerationActionOut])
 def history(pg: PageParams = Depends(), admin: User = Depends(admin_user), db: Session = Depends(get_db)):
     total = db.scalar(select(func.count()).select_from(ModerationAction))
@@ -113,19 +158,33 @@ def history(pg: PageParams = Depends(), admin: User = Depends(admin_user), db: S
 
 
 # ---------- reports ----------
-def _target_title(db: Session, r: Report) -> str:
+def _target_info(db: Session, r: Report) -> tuple[str, int | None]:
     if r.target_type == "comment":
         c = db.get(Comment, r.target_id)
-        return c.body[:80] if c else "(deleted comment)"
-    obj = db.get(Video if r.target_type == "video" else Episode, r.target_id)
-    return obj.title if obj else "(deleted)"
+        return (c.body[:80], c.author_id) if c else ("(deleted comment)", None)
+    if r.target_type == "user":
+        u = db.get(User, r.target_id)
+        return (u.display_name, u.id) if u else ("(deleted user)", None)
+    if r.target_type == "message":
+        m = db.get(Message, r.target_id)
+        return (m.body[:80], m.sender_id) if m else ("(deleted message)", None)
+    if r.target_type == "video":
+        v = db.get(Video, r.target_id)
+        return (v.title, v.owner_id) if v else ("(deleted video)", None)
+    e = db.get(Episode, r.target_id)
+    return (e.title, e.podcast.owner_id) if e else ("(deleted episode)", None)
 
 
 @reports_router.post("/reports", status_code=201)
 def create_report(body: s.ReportCreate, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    model = {"video": Video, "episode": Episode, "comment": Comment}[body.target_type]
-    if not db.get(model, body.target_id):
+    model = {"video": Video, "episode": Episode, "comment": Comment, "user": User, "message": Message}[body.target_type]
+    target = db.get(model, body.target_id)
+    if not target:
         raise err(404, "not_found", "Reported content not found.")
+    if body.target_type == "user" and target.id == user.id:
+        raise err(400, "self_report", "You cannot report yourself.")
+    if body.target_type == "message" and user.id not in (target.sender_id, target.recipient_id):
+        raise err(403, "forbidden", "You can only report messages in your own conversations.")
     dup = db.scalar(select(Report).where(Report.reporter_id == user.id, Report.target_type == body.target_type,
                                          Report.target_id == body.target_id, Report.status == "open"))
     if dup:
@@ -144,9 +203,13 @@ def list_reports(status: str = "open", pg: PageParams = Depends(), admin: User =
         stmt = stmt.where(Report.status == status)
     total = db.scalar(select(func.count()).select_from(stmt.subquery()))
     rows = db.scalars(stmt.order_by(Report.id.desc()).offset(pg.offset).limit(pg.page_size)).unique().all()
-    return s.Page(items=[s.ReportOut(id=r.id, target_type=r.target_type, target_id=r.target_id, target_title=_target_title(db, r),
-                                     reason=r.reason, status=r.status, reporter=user_out(db, r.reporter), created_at=r.created_at)
-                         for r in rows], total=total, page=pg.page, page_size=pg.page_size)
+    items = []
+    for r in rows:
+        title, uid = _target_info(db, r)
+        items.append(s.ReportOut(id=r.id, target_type=r.target_type, target_id=r.target_id, target_title=title,
+                                 target_user_id=uid, reason=r.reason, status=r.status,
+                                 reporter=user_out(db, r.reporter), created_at=r.created_at))
+    return s.Page(items=items, total=total, page=pg.page, page_size=pg.page_size)
 
 
 @reports_router.post("/admin/reports/{report_id}/resolve")

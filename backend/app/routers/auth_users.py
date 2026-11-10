@@ -1,14 +1,15 @@
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy import select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from .. import schemas as s
 from ..config import settings
 from ..db import get_db
 from ..deps import PageParams, admin_user, client_ip, current_user, err, optional_user
-from ..models import Follow, User
+from ..models import Follow, MediaAsset, ModerationAction, Podcast, User, UserBlock, Video
 from ..security import create_token, hash_password, limiter, verify_password
-from ..services import audit, get_asset_owned, notify, user_out
+from ..services import audit, blocked_peer_ids, get_asset_owned, is_blocked_between, notify, user_out
+from ..storage import delete_key
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 users_router = APIRouter(prefix="/users", tags=["users"])
@@ -53,8 +54,6 @@ def list_users(q: str | None = None, role: str | None = None, pg: PageParams = D
         stmt = stmt.where(User.display_name.ilike(f"%{q}%") | User.email.ilike(f"%{q}%"))
     if role:
         stmt = stmt.where(User.role == role)
-    from sqlalchemy import func
-
     total = db.scalar(select(func.count()).select_from(stmt.subquery()))
     rows = db.scalars(stmt.order_by(User.id).offset(pg.offset).limit(pg.page_size)).unique().all()
     return s.Page(items=[user_out(db, u, admin) for u in rows], total=total, page=pg.page, page_size=pg.page_size)
@@ -77,12 +76,25 @@ def update_me(body: s.ProfileUpdate, user: User = Depends(current_user), db: Ses
 
 @users_router.get("/search", response_model=list[s.UserOut])
 def search_users(q: str = "", me: User = Depends(current_user), db: Session = Depends(get_db)):
-    """Find people to message (display-name match, active accounts, excludes yourself)."""
+    """Find people to message (display-name match, active accounts, excludes yourself and blocked users)."""
     q = q.strip()
     if len(q) < 2:
         return []
-    rows = db.scalars(select(User).where(User.is_active.is_(True), User.id != me.id, User.display_name.ilike(f"%{q}%"))
-                      .order_by(User.display_name).limit(10)).unique().all()
+    stmt = select(User).where(User.is_active.is_(True), User.id != me.id, User.display_name.ilike(f"%{q}%"))
+    blocked = blocked_peer_ids(db, me.id)
+    if blocked:
+        stmt = stmt.where(User.id.notin_(blocked))
+    rows = db.scalars(stmt.order_by(User.display_name).limit(10)).unique().all()
+    return [user_out(db, u, me) for u in rows]
+
+
+@users_router.get("/blocks", response_model=list[s.UserOut])
+def list_blocked(me: User = Depends(current_user), db: Session = Depends(get_db)):
+    """List users currently blocked by the authenticated user."""
+    rows = db.scalars(
+        select(User).join(UserBlock, UserBlock.blocked_id == User.id)
+        .where(UserBlock.blocker_id == me.id).order_by(UserBlock.id.desc())
+    ).unique().all()
     return [user_out(db, u, me) for u in rows]
 
 
@@ -107,6 +119,37 @@ def set_status(user_id: int, body: s.UserStatusIn, admin: User = Depends(admin_u
     return user_out(db, u, admin)
 
 
+@users_router.delete("/{user_id}", status_code=204)
+def delete_user(user_id: int, admin: User = Depends(admin_user), db: Session = Depends(get_db)):
+    """Permanently remove a user account and all of their content and media files."""
+    u = db.get(User, user_id)
+    if not u:
+        raise err(404, "not_found", "User not found.")
+    if u.id == admin.id:
+        raise err(400, "self_action", "You cannot remove your own account.")
+    if u.role == "admin":
+        raise err(403, "forbidden", "Cannot remove another admin account.")
+
+    keys = [a.storage_key for a in db.scalars(select(MediaAsset).where(MediaAsset.owner_id == u.id)).all()]
+    u.avatar_asset_id = None
+    db.flush()
+
+    for v in db.scalars(select(Video).where(Video.owner_id == u.id)).unique().all():
+        db.delete(v)
+    for p in db.scalars(select(Podcast).where(Podcast.owner_id == u.id)).unique().all():
+        db.delete(p)
+    db.flush()
+
+    db.execute(delete(MediaAsset).where(MediaAsset.owner_id == u.id))
+    db.add(ModerationAction(admin_id=admin.id, target_type="user", target_id=u.id,
+                            target_title=u.display_name[:200], action="delete", reason="Removed by admin"))
+    audit(db, admin, "user.delete", "user", u.id, {"email": u.email, "display_name": u.display_name})
+    db.delete(u)
+    db.commit()
+    for k in keys:
+        delete_key(k)
+
+
 @users_router.post("/{user_id}/follow", response_model=s.UserOut)
 def follow(user_id: int, me: User = Depends(current_user), db: Session = Depends(get_db)):
     target = db.get(User, user_id)
@@ -114,6 +157,8 @@ def follow(user_id: int, me: User = Depends(current_user), db: Session = Depends
         raise err(404, "not_found", "User not found.")
     if target.id == me.id:
         raise err(400, "self_follow", "You cannot follow yourself.")
+    if is_blocked_between(db, me.id, target.id):
+        raise err(403, "blocked", "Cannot follow this user while a block is active.")
     exists = db.scalar(select(Follow).where(Follow.follower_id == me.id, Follow.followee_id == target.id))
     if not exists:
         db.add(Follow(follower_id=me.id, followee_id=target.id))
@@ -130,5 +175,42 @@ def unfollow(user_id: int, me: User = Depends(current_user), db: Session = Depen
     row = db.scalar(select(Follow).where(Follow.follower_id == me.id, Follow.followee_id == target.id))
     if row:
         db.delete(row)
+        db.commit()
+    return user_out(db, target, me, full=True)
+
+
+@users_router.post("/{user_id}/block", response_model=s.UserOut)
+def block_user(user_id: int, me: User = Depends(current_user), db: Session = Depends(get_db)):
+    target = db.get(User, user_id)
+    if not target:
+        raise err(404, "not_found", "User not found.")
+    if target.id == me.id:
+        raise err(400, "self_block", "You cannot block yourself.")
+    exists = db.scalar(select(UserBlock).where(UserBlock.blocker_id == me.id, UserBlock.blocked_id == target.id))
+    if not exists:
+        db.add(UserBlock(blocker_id=me.id, blocked_id=target.id))
+        # Remove any follows in either direction.
+        db.execute(
+            delete(Follow).where(
+                or_(
+                    (Follow.follower_id == me.id) & (Follow.followee_id == target.id),
+                    (Follow.follower_id == target.id) & (Follow.followee_id == me.id),
+                )
+            )
+        )
+        audit(db, me, "user.block", "user", target.id, {"display_name": target.display_name})
+        db.commit()
+    return user_out(db, target, me, full=True)
+
+
+@users_router.delete("/{user_id}/block", response_model=s.UserOut)
+def unblock_user(user_id: int, me: User = Depends(current_user), db: Session = Depends(get_db)):
+    target = db.get(User, user_id)
+    if not target:
+        raise err(404, "not_found", "User not found.")
+    row = db.scalar(select(UserBlock).where(UserBlock.blocker_id == me.id, UserBlock.blocked_id == target.id))
+    if row:
+        db.delete(row)
+        audit(db, me, "user.unblock", "user", target.id, {"display_name": target.display_name})
         db.commit()
     return user_out(db, target, me, full=True)

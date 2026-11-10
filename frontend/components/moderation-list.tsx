@@ -1,10 +1,10 @@
 "use client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Eye, EyeOff, RotateCcw, X } from "lucide-react";
+import { Check, Eye, EyeOff, RotateCcw, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api, mediaSrc, type ModItem, type Page } from "@/lib/api";
-import { cn, formatDateTime, timeAgo } from "@/lib/utils";
+import { cn, formatDateTime, formatTime, timeAgo } from "@/lib/utils";
 import { Avatar, Button, Card, EmptyState, ErrorState, Modal, Skeleton, StatusBadge, Textarea } from "./ui";
 
 const STATUS_FILTERS = ["pending", "approved", "rejected", "hidden", "all"];
@@ -14,9 +14,18 @@ export function ModerationList({ type, initialStatus = "pending", filters = true
   const [status, setStatus] = useState(initialStatus);
   const [page, setPage] = useState(1);
   const [rejecting, setRejecting] = useState<ModItem | null>(null);
+  const [removing, setRemoving] = useState<ModItem | null>(null);
   const [reason, setReason] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const q = useQuery({ queryKey: ["mod-queue", type, status, page], queryFn: () => api<Page<ModItem>>(`/admin/moderation/queue?type=${type}&status=${status}&page=${page}&page_size=10`), refetchInterval: 10000 });
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["mod-queue"] });
+    qc.invalidateQueries({ queryKey: ["admin-overview"] });
+    qc.invalidateQueries({ queryKey: ["mod-history"] });
+    qc.invalidateQueries({ queryKey: ["feed"] });
+    qc.invalidateQueries({ queryKey: ["admin-reports"] });
+  };
 
   const act = useMutation({
     mutationFn: ({ it, action, body }: { it: ModItem; action: string; body?: unknown }) =>
@@ -24,7 +33,19 @@ export function ModerationList({ type, initialStatus = "pending", filters = true
     onSuccess: (_d, v) => {
       const past: Record<string, string> = { approve: "approved", reject: "rejected", hide: "hidden", restore: "restored" };
       toast.success(`“${v.it.title}” ${past[v.action]}`);
-      qc.invalidateQueries({ queryKey: ["mod-queue"] }); qc.invalidateQueries({ queryKey: ["admin-overview"] }); qc.invalidateQueries({ queryKey: ["mod-history"] }); qc.invalidateQueries({ queryKey: ["feed"] });
+      refresh();
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+
+  const remove = useMutation({
+    mutationFn: ({ it, reason: r }: { it: ModItem; reason: string }) =>
+      api(`/admin/moderation/${it.type}/${it.id}/remove`, { method: "POST", json: { reason: r.trim() || null } }),
+    onSuccess: (_d, v) => {
+      toast.success(`“${v.it.title}” permanently removed`);
+      setRemoving(null);
+      setReason("");
+      refresh();
     },
     onError: (e) => toast.error((e as Error).message),
   });
@@ -45,8 +66,17 @@ export function ModerationList({ type, initialStatus = "pending", filters = true
           return (
             <Card key={key} className="p-4" data-testid="mod-item" data-title={it.title}>
               <div className="flex flex-wrap items-start gap-3">
+                {it.thumbnail_url && (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={mediaSrc(it.thumbnail_url, it.status)} alt={`${it.title} thumbnail`} className="h-16 w-12 shrink-0 rounded-lg bg-black object-cover" data-testid="mod-thumb" />
+                )}
                 <div className="min-w-0 basis-full space-y-1 sm:basis-0 sm:flex-1">
-                  <div className="flex flex-wrap items-center gap-2"><span className="rounded bg-elevated px-1.5 py-0.5 text-[10px] font-semibold uppercase">{it.type}</span><StatusBadge status={it.status} /><span className="text-xs text-muted">{it.category}</span></div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded bg-elevated px-1.5 py-0.5 text-[10px] font-semibold uppercase">{it.type}</span>
+                    <StatusBadge status={it.status} />
+                    <span className="text-xs text-muted">{it.category}</span>
+                    {it.duration_seconds != null && <span className="text-xs tabular-nums text-muted">· {formatTime(it.duration_seconds)}</span>}
+                  </div>
                   <p className="break-words font-medium">{it.title}</p>
                   <p className="text-xs text-muted">Uploaded {formatDateTime(it.created_at)} · {timeAgo(it.created_at)}</p>
                   <p className="flex items-center gap-1.5 text-xs text-muted"><Avatar name={it.owner.display_name} url={it.owner.avatar_url} size={18} />{it.owner.display_name}</p>
@@ -60,12 +90,13 @@ export function ModerationList({ type, initialStatus = "pending", filters = true
                   )}
                   {it.status === "pending" && <Button size="sm" variant="danger" data-testid="reject" onClick={() => { setRejecting(it); setReason(""); }}><X className="h-4 w-4" />Reject</Button>}
                   {it.status === "approved" && <Button size="sm" variant="secondary" data-testid="hide" onClick={() => act.mutate({ it, action: "hide", body: {} })}><EyeOff className="h-4 w-4" />Hide</Button>}
+                  <Button size="sm" variant="danger" data-testid="remove" onClick={() => { setRemoving(it); setReason(""); }}><Trash2 className="h-4 w-4" />Remove</Button>
                 </div>
               </div>
               {open === key && (
                 <div className="mt-3 flex justify-center rounded-xl bg-black p-2">
                   {it.type === "video" || it.mime_type.startsWith("video/")
-                    ? <video src={mediaSrc(it.media_url, it.status === "approved" ? "pending" : it.status)} controls playsInline className="max-h-[420px] rounded-lg" data-testid="mod-preview" />
+                    ? <video src={mediaSrc(it.media_url, it.status === "approved" ? "pending" : it.status)} poster={mediaSrc(it.thumbnail_url, it.status)} controls playsInline className="max-h-[420px] rounded-lg" data-testid="mod-preview" />
                     : <audio src={mediaSrc(it.media_url, "pending")} controls className="w-full" data-testid="mod-preview" />}
                 </div>
               )}
@@ -83,6 +114,13 @@ export function ModerationList({ type, initialStatus = "pending", filters = true
         <form onSubmit={(e) => { e.preventDefault(); if (rejecting) act.mutate({ it: rejecting, action: "reject", body: { reason } }, { onSuccess: () => setRejecting(null) }); }} className="space-y-3">
           <Textarea aria-label="Rejection reason" required minLength={3} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Tell the creator why (shown to them)…" />
           <div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => setRejecting(null)}>Cancel</Button><Button type="submit" variant="danger" loading={act.isPending} disabled={reason.trim().length < 3} data-testid="confirm-reject">Reject</Button></div>
+        </form>
+      </Modal>
+      <Modal open={!!removing} onClose={() => setRemoving(null)} title={`Permanently remove “${removing?.title ?? ""}”?`}>
+        <form onSubmit={(e) => { e.preventDefault(); if (removing) remove.mutate({ it: removing, reason }); }} className="space-y-3">
+          <p className="text-sm text-muted">This permanently deletes the {removing?.type} and its stored media file. This action is recorded in moderation history.</p>
+          <Textarea aria-label="Removal reason" maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Optional reason (shown to the creator)…" />
+          <div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => setRemoving(null)}>Cancel</Button><Button type="submit" variant="danger" loading={remove.isPending} data-testid="confirm-remove">Remove permanently</Button></div>
         </form>
       </Modal>
     </div>
