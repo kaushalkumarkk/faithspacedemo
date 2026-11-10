@@ -6,7 +6,7 @@ import { api, formatTime, mediaSrc, type User, type Video } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
 export default function ProfileScreen() {
-  const { user, apiUrl, logout } = useAuth();
+  const { user, logout } = useAuth();
   const router = useRouter();
   const [myVideos, setMyVideos] = useState<Video[]>([]);
   const [blocked, setBlocked] = useState<User[]>([]);
@@ -70,7 +70,6 @@ export default function ProfileScreen() {
             <Text style={styles.meta}>
               {user.role.toUpperCase()} · {user.email}
             </Text>
-            <Text style={styles.meta}>API: {apiUrl}</Text>
           </View>
         </View>
         <Pressable

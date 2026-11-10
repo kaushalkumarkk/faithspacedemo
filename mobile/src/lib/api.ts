@@ -14,11 +14,11 @@ function inferDefaultApiUrl(): string {
   if (hostUri) {
     const host = hostUri.split(":")[0];
     if (host && host !== "localhost" && host !== "127.0.0.1") {
-      return `http://${host}:8000`;
+      return `http://${host}:8001`;
     }
   }
-  if (Platform.OS === "android") return "http://10.0.2.2:8000";
-  return "http://localhost:8000";
+  if (Platform.OS === "android") return "http://10.0.2.2:8001";
+  return "http://localhost:8001";
 }
 
 let cachedToken: string | null = null;
@@ -29,13 +29,12 @@ export function getApiUrl(): string {
 }
 
 export async function initStorage(): Promise<{ token: string | null; apiUrl: string }> {
+  cachedApiUrl = inferDefaultApiUrl();
   if (Platform.OS === "web" && typeof localStorage !== "undefined") {
     cachedToken = localStorage.getItem(TOKEN_KEY);
-    cachedApiUrl = localStorage.getItem(API_URL_KEY) || inferDefaultApiUrl();
   } else {
     try {
       cachedToken = await SecureStore.getItemAsync(TOKEN_KEY);
-      cachedApiUrl = (await SecureStore.getItemAsync(API_URL_KEY)) || inferDefaultApiUrl();
     } catch {
       cachedToken = null;
     }

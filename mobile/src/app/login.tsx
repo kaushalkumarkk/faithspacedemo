@@ -15,22 +15,13 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/auth";
 
-const DEMO_ACCOUNTS = [
-  { label: "Admin", email: "admin@faithspace.demo", role: "admin" },
-  { label: "Daniel (Creator)", email: "creator@faithspace.demo", role: "creator" },
-  { label: "Priya (Creator 2)", email: "creator2@faithspace.demo", role: "creator" },
-  { label: "Vera (Viewer)", email: "viewer@faithspace.demo", role: "viewer" },
-  { label: "Victor (Viewer 2)", email: "viewer2@faithspace.demo", role: "viewer" },
-] as const;
-
 export default function LoginScreen() {
-  const { login, register, apiUrl, updateApiUrl } = useAuth();
+  const { login, register } = useAuth();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [role, setRole] = useState<"viewer" | "creator">("viewer");
-  const [serverInput, setServerInput] = useState(apiUrl);
   const [busy, setBusy] = useState(false);
 
   const handleSubmit = async () => {
@@ -40,7 +31,6 @@ export default function LoginScreen() {
     }
     setBusy(true);
     try {
-      await updateApiUrl(serverInput);
       if (mode === "login") {
         await login(email.trim(), password);
       } else {
@@ -48,18 +38,6 @@ export default function LoginScreen() {
       }
     } catch (e) {
       Alert.alert("Authentication failed", (e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const quickLogin = async (demoEmail: string) => {
-    setBusy(true);
-    try {
-      await updateApiUrl(serverInput);
-      await login(demoEmail, "Demo1234!");
-    } catch (e) {
-      Alert.alert("Demo login failed", (e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -111,7 +89,7 @@ export default function LoginScreen() {
               style={styles.input}
               autoCapitalize="none"
               keyboardType="email-address"
-              placeholder="you@faithspace.demo"
+              placeholder="you@example.com"
               placeholderTextColor="#7c7b8a"
               value={email}
               onChangeText={setEmail}
@@ -131,30 +109,6 @@ export default function LoginScreen() {
               {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>{mode === "login" ? "Sign in" : "Register"}</Text>}
             </Pressable>
           </View>
-
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>One-tap demo accounts (Demo1234!)</Text>
-            <Text style={styles.hint}>Log in as Viewer on Phone 1 and Creator on Phone 2 for two-phone messaging.</Text>
-            <View style={styles.demoGrid}>
-              {DEMO_ACCOUNTS.map((a) => (
-                <Pressable key={a.email} style={styles.demoBtn} onPress={() => quickLogin(a.email)} disabled={busy}>
-                  <Text style={styles.demoBtnText}>{a.label}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Backend API URL</Text>
-            <Text style={styles.hint}>Auto-detected from Expo host. Change to your PC&apos;s LAN IP (e.g. http://192.168.1.5:8000) if needed.</Text>
-            <TextInput
-              style={styles.input}
-              autoCapitalize="none"
-              autoCorrect={false}
-              value={serverInput}
-              onChangeText={setServerInput}
-            />
-          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -163,7 +117,7 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#0d0c12" },
-  container: { padding: 20, gap: 16 },
+  container: { flexGrow: 1, justifyContent: "center", padding: 20, gap: 16 },
   brand: { alignItems: "center", marginVertical: 12 },
   logoImg: { width: 72, height: 72, borderRadius: 20, marginBottom: 10 },
   title: { color: "#fff", fontSize: 28, fontWeight: "700" },
@@ -183,9 +137,4 @@ const styles = StyleSheet.create({
   roleTextActive: { color: "#fff" },
   primaryBtn: { backgroundColor: "#7c5cff", borderRadius: 12, paddingVertical: 13, alignItems: "center", marginTop: 4 },
   primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
-  sectionTitle: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  hint: { color: "#9c9aa8", fontSize: 12, lineHeight: 17 },
-  demoGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 },
-  demoBtn: { backgroundColor: "#252336", paddingHorizontal: 12, paddingVertical: 9, borderRadius: 10, borderWidth: 1, borderColor: "#373452" },
-  demoBtnText: { color: "#fff", fontSize: 12, fontWeight: "600" },
 });
