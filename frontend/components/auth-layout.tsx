@@ -1,4 +1,5 @@
-import { Headphones, PlaySquare, ShieldCheck, Sparkles } from "lucide-react";
+import { Headphones, PlaySquare, ShieldCheck } from "lucide-react";
+import { ConnectSphereMark } from "./logo";
 
 const points = [
   { icon: PlaySquare, title: "Short videos", body: "Record or upload reflections, music and stories." },
@@ -13,12 +14,12 @@ export function AuthLayout({ children }: { children: React.ReactNode }) {
       <aside className="relative hidden overflow-hidden bg-gradient-to-br from-[hsl(256_70%_38%)] via-[hsl(262_65%_30%)] to-[hsl(244_50%_14%)] p-12 text-white lg:flex lg:flex-col lg:justify-between">
         <div aria-hidden className="absolute -right-24 -top-24 h-96 w-96 rounded-full bg-accent/30 blur-3xl" />
         <div aria-hidden className="absolute -bottom-32 -left-20 h-96 w-96 rounded-full bg-brand/40 blur-3xl" />
-        <div className="relative flex items-center gap-2 font-display text-2xl font-semibold">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-white/15 backdrop-blur"><Sparkles className="h-5 w-5" aria-hidden /></span>
-          Faith Space
+        <div className="relative flex items-center gap-2.5 font-display text-2xl font-semibold">
+          <ConnectSphereMark className="h-10 w-10 shrink-0" />
+          ConnectSphere
         </div>
         <div className="relative max-w-md space-y-8">
-          <h1 className="font-display text-5xl font-semibold leading-tight">A space for every tradition — and none.</h1>
+          <h1 className="font-display text-5xl font-semibold leading-tight">Connect, share, and stay safe together.</h1>
           <ul className="space-y-5">
             {points.map((p) => (
               <li key={p.title} className="flex gap-4">
@@ -28,13 +29,13 @@ export function AuthLayout({ children }: { children: React.ReactNode }) {
             ))}
           </ul>
         </div>
-        <p className="relative text-xs text-white/60">Faith Space — Technical Proof of Concept · built by DevNexa</p>
+        <p className="relative text-xs text-white/60">ConnectSphere · built by DevNexa</p>
       </aside>
       <div className="flex items-center justify-center bg-bg p-5 sm:p-10">
         <div className="w-full max-w-md animate-fade-up space-y-6">
-          <div className="flex items-center gap-2 font-display text-2xl font-semibold lg:hidden">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-brand to-accent text-white"><Sparkles className="h-4 w-4" aria-hidden /></span>
-            Faith Space
+          <div className="flex items-center gap-2.5 font-display text-2xl font-semibold lg:hidden">
+            <ConnectSphereMark className="h-9 w-9 shrink-0" />
+            ConnectSphere
           </div>
           {children}
         </div>

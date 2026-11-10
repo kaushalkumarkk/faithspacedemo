@@ -1,18 +1,18 @@
 {
   "expo": {
-    "name": "Faith Space",
-    "slug": "faith-space-mobile",
+    "name": "ConnectSphere",
+    "slug": "connectsphere",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "faithspace",
+    "scheme": "connectsphere",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/images/icon.png"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#120E24",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
@@ -28,9 +28,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#12101A",
+          "backgroundColor": "#120E24",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 120
         }
       ],
       "expo-video",
@@ -38,9 +38,9 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Faith Space needs photo library access to upload videos and thumbnails.",
-          "cameraPermission": "Faith Space needs camera access to record videos up to 90 seconds.",
-          "microphonePermission": "Faith Space needs microphone access when recording videos."
+          "photosPermission": "ConnectSphere needs photo library access to upload videos and thumbnails.",
+          "cameraPermission": "ConnectSphere needs camera access to record videos up to 90 seconds.",
+          "microphonePermission": "ConnectSphere needs microphone access when recording videos."
         }
       ]
     ],

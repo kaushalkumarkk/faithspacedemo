@@ -1,7 +1,7 @@
 "use client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Bell, GitBranch, Headphones, LayoutDashboard, LogIn, LogOut, MessageSquare, Moon, PlaySquare, PlusSquare, Sparkles, Sun, UserRound, Video,
+  Bell, GitBranch, Headphones, LayoutDashboard, LogIn, LogOut, MessageSquare, Moon, PlaySquare, PlusSquare, Sun, UserRound, Video,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import Link from "next/link";
@@ -10,13 +10,14 @@ import { useEffect, useRef, useState } from "react";
 import { api, type Notification, type Page } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn, timeAgo } from "@/lib/utils";
+import { ConnectSphereMark } from "./logo";
 import { Avatar, Button } from "./ui";
 
 export function Logo({ className }: { className?: string }) {
   return (
     <Link href="/" className={cn("flex items-center gap-2 font-display text-xl font-semibold", className)}>
-      <span className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-brand to-accent text-white"><Sparkles className="h-4 w-4" aria-hidden /></span>
-      Faith Space
+      <ConnectSphereMark className="h-8 w-8 shrink-0" />
+      ConnectSphere
     </Link>
   );
 }
@@ -156,7 +157,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <header className="sticky top-0 z-40 flex h-14 items-center gap-2 border-b border-line bg-bg/85 px-3 backdrop-blur lg:px-6">
         <Logo className="lg:hidden" />
-        <span className="ml-1 hidden rounded-full bg-accent/15 px-3 py-1 text-xs font-medium text-accent sm:inline">Faith Space — Technical Proof of Concept</span>
+        <span className="ml-1 hidden rounded-full bg-accent/15 px-3 py-1 text-xs font-medium text-accent sm:inline">ConnectSphere</span>
         <div className="ml-auto flex items-center gap-1">
           <ThemeToggle />
           <NotificationBell />

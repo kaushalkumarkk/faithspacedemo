@@ -357,6 +357,10 @@ export default function WatchScreen() {
           </Text>
         </View>
       )}
+      <View style={[styles.brandPill, { top: Math.max(insets.top + 8, 16) }]}>
+        <Image source={require("@/assets/images/logo.png")} style={styles.brandLogo} contentFit="cover" />
+        <Text style={styles.brandText}>ConnectSphere</Text>
+      </View>
 
       {/* Comments modal */}
       <Modal visible={!!commentsFor} animationType="slide" transparent onRequestClose={() => setCommentsFor(null)}>
@@ -446,6 +450,9 @@ const styles = StyleSheet.create({
   pauseOverlay: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.25)" },
   counterPill: { position: "absolute", left: 16, backgroundColor: "rgba(0,0,0,0.6)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
   counterText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  brandPill: { position: "absolute", right: 16, flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(0,0,0,0.6)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
+  brandLogo: { width: 18, height: 18, borderRadius: 5 },
+  brandText: { color: "#fff", fontSize: 12, fontWeight: "700" },
   rail: { position: "absolute", right: 12, bottom: 96, alignItems: "center", gap: 18 },
   railBtn: { alignItems: "center", gap: 3 },
   railText: { color: "#fff", fontSize: 11, fontWeight: "600" },

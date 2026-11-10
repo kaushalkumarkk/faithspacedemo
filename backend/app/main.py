@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from .config import settings
 from .routers import admin, auth_users, messages, notifications, podcasts, uploads, videos
 
-app = FastAPI(title="Faith Space API — Technical Proof of Concept", version="0.1.0")
+app = FastAPI(title="ConnectSphere API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,

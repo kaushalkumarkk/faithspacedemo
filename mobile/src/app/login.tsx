@@ -1,3 +1,4 @@
+import { Image } from "expo-image";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -69,11 +70,9 @@ export default function LoginScreen() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
           <View style={styles.brand}>
-            <View style={styles.logoBadge}>
-              <Text style={styles.logoText}>FS</Text>
-            </View>
-            <Text style={styles.title}>Faith Space</Text>
-            <Text style={styles.subtitle}>Expo Go SDK 58 Mobile Client</Text>
+            <Image source={require("@/assets/images/logo.png")} style={styles.logoImg} contentFit="cover" />
+            <Text style={styles.title}>ConnectSphere</Text>
+            <Text style={styles.subtitle}>Video · Messaging · Community</Text>
           </View>
 
           <View style={styles.card}>
@@ -166,8 +165,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#0d0c12" },
   container: { padding: 20, gap: 16 },
   brand: { alignItems: "center", marginVertical: 12 },
-  logoBadge: { width: 56, height: 56, borderRadius: 16, backgroundColor: "#7c5cff", alignItems: "center", justifyContent: "center", marginBottom: 8 },
-  logoText: { color: "#fff", fontSize: 22, fontWeight: "800" },
+  logoImg: { width: 72, height: 72, borderRadius: 20, marginBottom: 10 },
   title: { color: "#fff", fontSize: 28, fontWeight: "700" },
   subtitle: { color: "#9c9aa8", fontSize: 13, marginTop: 2 },
   card: { backgroundColor: "#171622", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#282638", gap: 10 },
