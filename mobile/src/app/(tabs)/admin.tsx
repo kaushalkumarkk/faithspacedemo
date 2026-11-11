@@ -194,16 +194,16 @@ export default function AdminScreen() {
       <View style={styles.tabs}>
         {([["queue", `Content (${items.length})`], ["reports", `Reports (${reports.length})`], ["users", `Users (${users.length})`]] as const).map(([k, label]) => (
           <Pressable key={k} onPress={() => { hapticLight(); setTab(k); }} style={[styles.tab, tab === k && styles.tabActive]}>
-            <Text style={[styles.tabText, tab === k && styles.tabTextActive]}>{label}</Text>
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={[styles.tabText, tab === k && styles.tabTextActive]}>{label}</Text>
           </Pressable>
         ))}
       </View>
 
       {tab === "queue" && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow} style={{ flexGrow: 0 }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow} style={styles.filterScroll}>
           {STATUS_FILTERS.map((s) => (
             <Pressable key={s} onPress={() => { hapticLight(); setStatusFilter(s); }} style={[styles.filterPill, statusFilter === s && styles.filterPillActive]}>
-              <Text style={[styles.filterText, statusFilter === s && { color: "#fff" }]}>{s}</Text>
+              <Text numberOfLines={1} style={[styles.filterText, statusFilter === s && { color: "#fff" }]}>{s}</Text>
             </Pressable>
           ))}
         </ScrollView>
@@ -362,12 +362,14 @@ const styles = StyleSheet.create({
   statVal: { color: Theme.text, fontSize: 16, fontWeight: "800" },
   statLbl: { color: Theme.textMuted, fontSize: 10, marginTop: 1 },
   tabs: { flexDirection: "row", padding: 10, gap: 8, backgroundColor: Theme.surface, borderBottomWidth: 1, borderBottomColor: Theme.border },
-  tab: { flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: "center", backgroundColor: Theme.bg, borderWidth: 1, borderColor: Theme.border },
+  tab: { flex: 1, minWidth: 0, paddingHorizontal: 4, paddingVertical: 8, borderRadius: 10, alignItems: "center", backgroundColor: Theme.bg, borderWidth: 1, borderColor: Theme.border },
   tabActive: { backgroundColor: Theme.brand, borderColor: Theme.brand },
   tabText: { color: Theme.textMuted, fontSize: 12, fontWeight: "700" },
   tabTextActive: { color: "#fff" },
-  filterRow: { flexDirection: "row", gap: 6, paddingHorizontal: 12, paddingVertical: 8 },
-  filterPill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: Theme.surface, borderWidth: 1, borderColor: Theme.border },
+  // Explicit height: a horizontal ScrollView in a column otherwise collapses and cuts the pills in half.
+  filterScroll: { flexGrow: 0, flexShrink: 0, height: 52 },
+  filterRow: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12 },
+  filterPill: { flexShrink: 0, height: 36, justifyContent: "center", paddingHorizontal: 16, borderRadius: 18, backgroundColor: Theme.surface, borderWidth: 1, borderColor: Theme.border },
   filterPillActive: { backgroundColor: Theme.brandSoft, borderColor: Theme.brand },
   filterText: { color: Theme.textMuted, fontSize: 12, fontWeight: "600", textTransform: "capitalize" },
   container: { padding: 12, gap: 10 },

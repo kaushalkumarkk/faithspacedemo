@@ -106,7 +106,8 @@ export function uploadMediaFile(
     if (cachedToken) xhr.setRequestHeader("Authorization", `Bearer ${cachedToken}`);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && onProgress) {
-        onProgress(Math.round((e.loaded / e.total) * 100));
+        // RN counts the multipart envelope in `loaded` but not in `total`, so it can overshoot: never show more than 100.
+        onProgress(Math.min(100, Math.max(0, Math.round((e.loaded / e.total) * 100))));
       }
     };
     xhr.onload = () => {

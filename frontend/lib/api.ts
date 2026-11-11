@@ -49,7 +49,7 @@ export function uploadFile(
     xhr.open("POST", `${API_URL}/uploads`);
     const t = tokenStore.get();
     if (t) xhr.setRequestHeader("Authorization", `Bearer ${t}`);
-    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(Math.round((e.loaded / e.total) * 100));
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(Math.min(100, Math.max(0, Math.round((e.loaded / e.total) * 100))));
     xhr.onload = () => {
       let data: any = null;
       try { data = JSON.parse(xhr.responseText); } catch {}
