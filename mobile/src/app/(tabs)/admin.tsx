@@ -1,12 +1,40 @@
+import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useFocusEffect } from "expo-router";
+import { useVideoPlayer, VideoView } from "expo-video";
 import { useCallback, useState } from "react";
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { EmptyView, hapticLight, hapticSuccess } from "@/components/ui";
 import { api, formatTime, mediaSrc, type ModItem, type Page, type Report, type User } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { statusColors, Theme } from "@/lib/theme";
 
 const STATUS_FILTERS = ["all", "pending", "approved", "hidden", "rejected"] as const;
+
+function PreviewModal({ item, onClose }: { item: ModItem | null; onClose: () => void }) {
+  const src = item ? mediaSrc(item.media_url, item.status === "approved" ? "pending" : item.status) ?? null : null;
+  const player = useVideoPlayer(src, (p) => {
+    if (src) p.play();
+  });
+
+  return (
+    <Modal visible={!!item} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.previewCard}>
+          <View style={styles.previewHeader}>
+            <Text style={styles.title} numberOfLines={1}>{item?.title}</Text>
+            <Pressable onPress={onClose} style={styles.closeBtn}>
+              <Ionicons name="close" size={20} color={Theme.text} />
+            </Pressable>
+          </View>
+          <View style={styles.previewPlayerWrap}>
+            <VideoView player={player} style={{ width: "100%", height: "100%" }} contentFit="contain" nativeControls />
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 export default function AdminScreen() {
   const { user: me } = useAuth();
@@ -15,6 +43,7 @@ export default function AdminScreen() {
   const [items, setItems] = useState<ModItem[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [previewItem, setPreviewItem] = useState<ModItem | null>(null);
   const [rejecting, setRejecting] = useState<ModItem | null>(null);
   const [rejectReason, setRejectReason] = useState("");
 
@@ -39,12 +68,14 @@ export default function AdminScreen() {
   );
 
   const moderate = async (it: ModItem, action: "approve" | "restore" | "hide" | "remove") => {
+    hapticLight();
     try {
       if (action === "remove") {
         await api(`/admin/moderation/${it.type}/${it.id}/remove`, { method: "POST", json: { reason: "Removed by admin" } });
       } else {
         await api(`/admin/moderation/${it.type}/${it.id}/${action}`, { method: "POST", json: {} });
       }
+      hapticSuccess();
       await load();
     } catch (e) {
       Alert.alert("Error", (e as Error).message);
@@ -58,6 +89,7 @@ export default function AdminScreen() {
         method: "POST",
         json: { reason: rejectReason.trim() },
       });
+      hapticSuccess();
       setRejecting(null);
       setRejectReason("");
       await load();
@@ -67,6 +99,7 @@ export default function AdminScreen() {
   };
 
   const removeReported = async (r: Report) => {
+    hapticLight();
     try {
       if (r.target_type === "comment") {
         await api(`/comments/${r.target_id}`, { method: "DELETE" });
@@ -80,6 +113,7 @@ export default function AdminScreen() {
         if (r.target_user_id) await api(`/users/${r.target_user_id}/status`, { method: "PATCH", json: { is_active: false } });
         await api(`/admin/reports/${r.id}/resolve`, { method: "POST", json: { resolution: "resolved" } });
       }
+      hapticSuccess();
       await load();
     } catch (e) {
       Alert.alert("Error", (e as Error).message);
@@ -87,6 +121,7 @@ export default function AdminScreen() {
   };
 
   const dismissReport = async (id: number) => {
+    hapticLight();
     try {
       await api(`/admin/reports/${id}/resolve`, { method: "POST", json: { resolution: "dismissed" } });
       await load();
@@ -96,6 +131,7 @@ export default function AdminScreen() {
   };
 
   const toggleSuspend = async (u: User) => {
+    hapticLight();
     try {
       await api(`/users/${u.id}/status`, { method: "PATCH", json: { is_active: !u.is_active } });
       await load();
@@ -113,6 +149,7 @@ export default function AdminScreen() {
         onPress: async () => {
           try {
             await api(`/users/${u.id}`, { method: "DELETE" });
+            hapticSuccess();
             await load();
           } catch (e) {
             Alert.alert("Error", (e as Error).message);
@@ -135,7 +172,6 @@ export default function AdminScreen() {
 
   return (
     <View style={styles.screen}>
-      {/* Summary bar */}
       <View style={styles.statsBar}>
         <View style={styles.statChip}>
           <Text style={[styles.statVal, { color: Theme.warn }]}>{pendingCount}</Text>
@@ -157,7 +193,7 @@ export default function AdminScreen() {
 
       <View style={styles.tabs}>
         {([["queue", `Content (${items.length})`], ["reports", `Reports (${reports.length})`], ["users", `Users (${users.length})`]] as const).map(([k, label]) => (
-          <Pressable key={k} onPress={() => setTab(k)} style={[styles.tab, tab === k && styles.tabActive]}>
+          <Pressable key={k} onPress={() => { hapticLight(); setTab(k); }} style={[styles.tab, tab === k && styles.tabActive]}>
             <Text style={[styles.tabText, tab === k && styles.tabTextActive]}>{label}</Text>
           </Pressable>
         ))}
@@ -166,7 +202,7 @@ export default function AdminScreen() {
       {tab === "queue" && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow} style={{ flexGrow: 0 }}>
           {STATUS_FILTERS.map((s) => (
-            <Pressable key={s} onPress={() => setStatusFilter(s)} style={[styles.filterPill, statusFilter === s && styles.filterPillActive]}>
+            <Pressable key={s} onPress={() => { hapticLight(); setStatusFilter(s); }} style={[styles.filterPill, statusFilter === s && styles.filterPillActive]}>
               <Text style={[styles.filterText, statusFilter === s && { color: "#fff" }]}>{s}</Text>
             </Pressable>
           ))}
@@ -175,58 +211,73 @@ export default function AdminScreen() {
 
       <ScrollView contentContainerStyle={styles.container}>
         {tab === "queue" &&
-          filteredItems.map((it) => {
-            const thumb = mediaSrc(it.thumbnail_url, it.status);
-            const sc = statusColors(it.status);
-            return (
-              <View key={`${it.type}-${it.id}`} style={styles.card}>
-                <View style={styles.row}>
-                  {thumb && <Image source={{ uri: thumb }} style={styles.thumb} contentFit="cover" />}
-                  <View style={{ flex: 1, gap: 4 }}>
-                    <Text style={styles.title}>{it.title}</Text>
-                    <View style={styles.badgeLine}>
-                      <View style={[styles.statusBadge, { backgroundColor: sc.bg }]}>
-                        <Text style={[styles.statusText, { color: sc.fg }]}>{it.status}</Text>
+          (filteredItems.length === 0 ? (
+            <EmptyView icon="checkmark-done-circle-outline" title="Queue is clear" subtitle="No items match this status filter." />
+          ) : (
+            filteredItems.map((it) => {
+              const thumb = mediaSrc(it.thumbnail_url, it.status);
+              const sc = statusColors(it.status);
+              return (
+                <View key={`${it.type}-${it.id}`} style={styles.card}>
+                  <View style={styles.row}>
+                    {thumb ? (
+                      <Pressable onPress={() => setPreviewItem(it)}>
+                        <Image source={{ uri: thumb }} style={styles.thumb} contentFit="cover" />
+                      </Pressable>
+                    ) : (
+                      <View style={[styles.thumb, { alignItems: "center", justifyContent: "center" }]}>
+                        <Ionicons name="play" size={18} color="#fff" />
                       </View>
-                      <Text style={styles.meta}>
-                        {it.type.toUpperCase()} · {it.owner.display_name}
-                        {it.duration_seconds != null ? ` · ${formatTime(it.duration_seconds)}` : ""}
-                      </Text>
+                    )}
+                    <View style={{ flex: 1, gap: 4 }}>
+                      <Text style={styles.title}>{it.title}</Text>
+                      <View style={styles.badgeLine}>
+                        <View style={[styles.statusBadge, { backgroundColor: sc.bg }]}>
+                          <Text style={[styles.statusText, { color: sc.fg }]}>{it.status}</Text>
+                        </View>
+                        <Text style={styles.meta}>
+                          {it.type.toUpperCase()} · {it.owner.display_name}
+                          {it.duration_seconds != null ? ` · ${formatTime(it.duration_seconds)}` : ""}
+                        </Text>
+                      </View>
                     </View>
                   </View>
-                </View>
-                <View style={styles.btnRow}>
-                  {it.status === "pending" && (
-                    <>
-                      <Pressable style={styles.primaryBtn} onPress={() => moderate(it, "approve")}>
-                        <Text style={styles.btnText}>Approve</Text>
-                      </Pressable>
-                      <Pressable style={styles.warnBtn} onPress={() => { setRejectReason(""); setRejecting(it); }}>
-                        <Text style={styles.btnText}>Reject</Text>
-                      </Pressable>
-                    </>
-                  )}
-                  {(it.status === "hidden" || it.status === "rejected") && (
-                    <Pressable style={styles.primaryBtn} onPress={() => moderate(it, "restore")}>
-                      <Text style={styles.btnText}>Restore</Text>
+                  <View style={styles.btnRow}>
+                    <Pressable style={styles.secBtn} onPress={() => setPreviewItem(it)}>
+                      <Text style={styles.btnText}>Preview</Text>
                     </Pressable>
-                  )}
-                  {it.status === "approved" && (
-                    <Pressable style={styles.secBtn} onPress={() => moderate(it, "hide")}>
-                      <Text style={styles.btnText}>Hide</Text>
+                    {it.status === "pending" && (
+                      <>
+                        <Pressable style={styles.primaryBtn} onPress={() => moderate(it, "approve")}>
+                          <Text style={styles.btnText}>Approve</Text>
+                        </Pressable>
+                        <Pressable style={styles.warnBtn} onPress={() => { setRejectReason(""); setRejecting(it); }}>
+                          <Text style={styles.btnText}>Reject</Text>
+                        </Pressable>
+                      </>
+                    )}
+                    {(it.status === "hidden" || it.status === "rejected") && (
+                      <Pressable style={styles.primaryBtn} onPress={() => moderate(it, "restore")}>
+                        <Text style={styles.btnText}>Restore</Text>
+                      </Pressable>
+                    )}
+                    {it.status === "approved" && (
+                      <Pressable style={styles.secBtn} onPress={() => moderate(it, "hide")}>
+                        <Text style={styles.btnText}>Hide</Text>
+                      </Pressable>
+                    )}
+                    <Pressable style={styles.dangerBtn} onPress={() => moderate(it, "remove")}>
+                      <Text style={styles.dangerText}>Remove</Text>
                     </Pressable>
-                  )}
-                  <Pressable style={styles.dangerBtn} onPress={() => moderate(it, "remove")}>
-                    <Text style={styles.dangerText}>Remove</Text>
-                  </Pressable>
+                  </View>
                 </View>
-              </View>
-            );
-          })}
+              );
+            })
+          ))}
 
         {tab === "reports" &&
           (reports.length === 0 ? (
-            <Text style={styles.empty}>No open reports.</Text>
+            <EmptyView icon="shield-outline" title="No open reports" subtitle="Flagged videos, comments, messages, and users appear here." />
           ) : (
             reports.map((r) => (
               <View key={r.id} style={styles.card}>
@@ -271,6 +322,8 @@ export default function AdminScreen() {
             </View>
           ))}
       </ScrollView>
+
+      <PreviewModal item={previewItem} onClose={() => setPreviewItem(null)} />
 
       <Modal visible={!!rejecting} transparent animationType="fade" onRequestClose={() => setRejecting(null)}>
         <View style={styles.modalBackdrop}>
@@ -327,7 +380,6 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 10, fontWeight: "700", textTransform: "capitalize" },
   meta: { color: Theme.textMuted, fontSize: 12 },
   reason: { color: Theme.textSecondary, fontSize: 13 },
-  empty: { color: Theme.textMuted, textAlign: "center", marginTop: 32 },
   btnRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   primaryBtn: { backgroundColor: Theme.brand, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9 },
   warnBtn: { backgroundColor: "#9a5012", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9 },
@@ -335,7 +387,11 @@ const styles = StyleSheet.create({
   dangerBtn: { backgroundColor: Theme.dangerSoft, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9 },
   btnText: { color: "#fff", fontSize: 12, fontWeight: "700" },
   dangerText: { color: Theme.danger, fontSize: 12, fontWeight: "700" },
-  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", padding: 20 },
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "center", padding: 20 },
   dialog: { backgroundColor: Theme.surface, borderRadius: 20, padding: 18, gap: 12, borderWidth: 1, borderColor: Theme.border },
+  previewCard: { backgroundColor: Theme.surface, borderRadius: 20, padding: 14, gap: 12, borderWidth: 1, borderColor: Theme.border },
+  previewHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 },
+  closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: Theme.surfaceElevated, alignItems: "center", justifyContent: "center" },
+  previewPlayerWrap: { height: 360, borderRadius: 14, overflow: "hidden", backgroundColor: "#000" },
   input: { backgroundColor: Theme.bg, color: Theme.text, borderRadius: 12, padding: 12, minHeight: 80, textAlignVertical: "top", borderWidth: 1, borderColor: Theme.border },
 });

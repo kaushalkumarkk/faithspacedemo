@@ -2,10 +2,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
+import { LinearGradient } from "expo-linear-gradient";
 import { createVideoPlayer, useVideoPlayer, VideoView } from "expo-video";
 import { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -14,6 +14,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { GradientButton, hapticLight, hapticSuccess } from "@/components/ui";
 import { api, CATEGORIES, formatTime, uploadMediaFile, type Video } from "@/lib/api";
 import { Theme } from "@/lib/theme";
 
@@ -57,7 +58,10 @@ export default function UploadScreen() {
     videoUpRef.current = rec;
     rec.promise
       .then(() => {
-        if (videoUpRef.current === rec) setBgState("ready");
+        if (videoUpRef.current === rec) {
+          setBgState("ready");
+          hapticSuccess();
+        }
       })
       .catch((e) => {
         if (videoUpRef.current !== rec) return;
@@ -100,7 +104,7 @@ export default function UploadScreen() {
         beginBackgroundThumbUpload(saved.uri);
       }
     } catch {
-      // Optional fallback when codec doesn't expose thumbnail frame
+      // Fallback: creator can select a custom thumbnail image
     } finally {
       player?.release();
     }
@@ -121,12 +125,12 @@ export default function UploadScreen() {
     thumbUpRef.current?.cancel();
     thumbUpRef.current = null;
 
-    // Immediately start background upload so Submit feels instant!
     beginBackgroundVideoUpload(asset.uri, name, mime);
     extractAutoThumbnail(asset.uri);
   };
 
   const pickVideoFromLibrary = async () => {
+    hapticLight();
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       Alert.alert("Permission required", "Allow photo library access to pick a video.");
@@ -135,14 +139,13 @@ export default function UploadScreen() {
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["videos"],
       videoMaxDuration: 90,
-      // iOS re-encodes the picked clip to 720p H.264 (a 90 s clip is roughly 10-15 MB instead of 100+ MB), so it uploads much faster.
-      // Android has no export preset in expo-image-picker, so the original file is uploaded as is.
-      videoExportPreset: ImagePicker.VideoExportPreset.H264_1280x720,
+      quality: 0.8,
     });
     if (!res.canceled && res.assets[0]) handlePickedVideo(res.assets[0]);
   };
 
   const recordVideoWithCamera = async () => {
+    hapticLight();
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
       Alert.alert("Permission required", "Allow camera access to record up to 90 seconds.");
@@ -151,12 +154,13 @@ export default function UploadScreen() {
     const res = await ImagePicker.launchCameraAsync({
       mediaTypes: ["videos"],
       videoMaxDuration: 90,
-      videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium, // iOS only: smaller recording, faster upload
+      quality: 0.8,
     });
     if (!res.canceled && res.assets[0]) handlePickedVideo(res.assets[0]);
   };
 
   const pickCustomThumbnail = async () => {
+    hapticLight();
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       quality: 0.85,
@@ -168,6 +172,7 @@ export default function UploadScreen() {
   };
 
   const clearSelection = () => {
+    hapticLight();
     videoUpRef.current?.cancel();
     thumbUpRef.current?.cancel();
     videoUpRef.current = null;
@@ -207,10 +212,11 @@ export default function UploadScreen() {
         },
       });
 
+      hapticSuccess();
       clearSelection();
       setTitle("");
       setDescription("");
-      Alert.alert("Submitted!", "Your video is uploaded and pending admin approval.");
+      Alert.alert("Published to Queue", "Your video & thumbnail are submitted for moderation.");
     } catch (e) {
       Alert.alert("Upload failed", (e as Error).message);
     } finally {
@@ -221,23 +227,23 @@ export default function UploadScreen() {
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
       <View style={styles.headerBlock}>
-        <Text style={styles.heading}>Create a reel</Text>
-        <Text style={styles.sub}>Up to 90 seconds · uploads in the background while you add details.</Text>
+        <Text style={styles.heading}>Create a video</Text>
+        <Text style={styles.sub}>Up to 90s · uploads immediately in the background while you add details.</Text>
       </View>
 
       {!videoUri ? (
         <View style={styles.pickerGrid}>
-          <Pressable style={styles.pickCard} onPress={pickVideoFromLibrary}>
-            <View style={[styles.pickIcon, { backgroundColor: Theme.brandSoft }]}>
+          <Pressable style={({ pressed }) => [styles.pickCard, pressed && { opacity: 0.86 }]} onPress={pickVideoFromLibrary}>
+            <LinearGradient colors={["rgba(110,86,255,0.28)", "rgba(110,86,255,0.08)"]} style={styles.pickIcon}>
               <Ionicons name="folder-open" size={26} color={Theme.brand} />
-            </View>
+            </LinearGradient>
             <Text style={styles.pickTitle}>Choose Video</Text>
             <Text style={styles.pickHint}>MP4 / WebM up to 90s</Text>
           </Pressable>
-          <Pressable style={styles.pickCard} onPress={recordVideoWithCamera}>
-            <View style={[styles.pickIcon, { backgroundColor: Theme.accentSoft }]}>
+          <Pressable style={({ pressed }) => [styles.pickCard, pressed && { opacity: 0.86 }]} onPress={recordVideoWithCamera}>
+            <LinearGradient colors={["rgba(34,211,238,0.28)", "rgba(34,211,238,0.08)"]} style={styles.pickIcon}>
               <Ionicons name="videocam" size={26} color={Theme.accent} />
-            </View>
+            </LinearGradient>
             <Text style={styles.pickTitle}>Record Camera</Text>
             <Text style={styles.pickHint}>Up to 90s vertical clip</Text>
           </Pressable>
@@ -246,6 +252,12 @@ export default function UploadScreen() {
         <View style={styles.card}>
           <View style={styles.previewWrap}>
             <VideoView player={previewPlayer} style={styles.videoPreview} contentFit="contain" nativeControls />
+            {durationSec != null && (
+              <View style={styles.durBadge}>
+                <Ionicons name="time-outline" size={12} color="#fff" />
+                <Text style={styles.durBadgeText}>{formatTime(durationSec)}</Text>
+              </View>
+            )}
             <Pressable style={styles.removeBadge} onPress={clearSelection}>
               <Ionicons name="close" size={18} color="#fff" />
             </Pressable>
@@ -262,24 +274,29 @@ export default function UploadScreen() {
             <View style={{ flex: 1, gap: 4 }}>
               <Text style={styles.fileTitle} numberOfLines={1}>{videoName}</Text>
               <Text style={styles.meta}>
-                {durationSec != null ? `Duration ${formatTime(durationSec)}` : "Video selected"}
+                {thumbUri ? "Thumbnail captured" : "No thumbnail yet"}
               </Text>
               <Pressable onPress={pickCustomThumbnail}>
-                <Text style={styles.linkText}>Change thumbnail image</Text>
+                <Text style={styles.linkText}>Choose custom cover image</Text>
               </Pressable>
             </View>
           </View>
 
           {bgState === "uploading" && (
             <View style={styles.progressWrap}>
-              <View style={[styles.progressBar, { width: `${pct}%` }]} />
+              <LinearGradient
+                colors={[Theme.brand, Theme.accent]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[styles.progressBar, { width: `${pct}%` }]}
+              />
               <Text style={styles.progressText}>Uploading in background... {pct}%</Text>
             </View>
           )}
           {bgState === "ready" && (
             <View style={styles.readyPill}>
               <Ionicons name="checkmark-circle" size={16} color={Theme.success} />
-              <Text style={styles.readyText}>Video uploaded & ready for instant submit</Text>
+              <Text style={styles.readyText}>Uploaded & ready for instant submit</Text>
             </View>
           )}
           {bgState === "error" && (
@@ -289,9 +306,13 @@ export default function UploadScreen() {
       )}
 
       <View style={styles.card}>
-        <Text style={styles.label}>Title</Text>
+        <View style={styles.labelRow}>
+          <Text style={styles.label}>Title</Text>
+          <Text style={styles.charCount}>{title.length}/150</Text>
+        </View>
         <TextInput
           style={styles.input}
+          maxLength={150}
           placeholder="Give your video a clear title"
           placeholderTextColor={Theme.textMuted}
           value={title}
@@ -303,6 +324,7 @@ export default function UploadScreen() {
         <TextInput
           style={[styles.input, { minHeight: 84, textAlignVertical: "top" }]}
           multiline
+          maxLength={2000}
           placeholder="Share context or story..."
           placeholderTextColor={Theme.textMuted}
           value={description}
@@ -313,25 +335,27 @@ export default function UploadScreen() {
         <Text style={styles.label}>Category</Text>
         <View style={styles.cats}>
           {CATEGORIES.map((c) => (
-            <Pressable key={c} onPress={() => setCategory(c)} style={[styles.catChip, category === c && styles.catActive]}>
+            <Pressable
+              key={c}
+              onPress={() => {
+                hapticLight();
+                setCategory(c);
+              }}
+              style={[styles.catChip, category === c && styles.catActive]}
+            >
               <Text style={[styles.catText, category === c && styles.catTextActive]}>{c}</Text>
             </Pressable>
           ))}
         </View>
 
-        <Pressable
-          style={[styles.submitBtn, (!videoUri || saving || bgState === "error") && { opacity: 0.55 }]}
+        <GradientButton
+          label={bgState === "ready" ? "Submit Now (Instant)" : "Upload & Submit"}
+          icon={bgState === "ready" ? "flash" : "cloud-upload-outline"}
           onPress={submit}
-          disabled={!videoUri || saving || bgState === "error"}
-        >
-          {saving ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.submitText}>
-              {bgState === "ready" ? "Submit Now (Instant)" : "Upload & Submit for Moderation"}
-            </Text>
-          )}
-        </Pressable>
+          loading={saving}
+          disabled={!videoUri || bgState === "error"}
+          style={{ marginTop: 4 }}
+        />
       </View>
     </ScrollView>
   );
@@ -344,14 +368,16 @@ const styles = StyleSheet.create({
   heading: { color: Theme.text, fontSize: 24, fontWeight: "800", letterSpacing: -0.3 },
   sub: { color: Theme.textMuted, fontSize: 13 },
   pickerGrid: { flexDirection: "row", gap: 12 },
-  pickCard: { flex: 1, backgroundColor: Theme.surface, borderRadius: 18, padding: 18, alignItems: "center", gap: 8, borderWidth: 1, borderColor: Theme.border },
-  pickIcon: { width: 52, height: 52, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  pickCard: { flex: 1, backgroundColor: Theme.surface, borderRadius: 20, padding: 20, alignItems: "center", gap: 8, borderWidth: 1, borderColor: Theme.borderStrong, borderStyle: "dashed" },
+  pickIcon: { width: 54, height: 54, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   pickTitle: { color: Theme.text, fontWeight: "700", fontSize: 14 },
   pickHint: { color: Theme.textMuted, fontSize: 11 },
   card: { backgroundColor: Theme.surface, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: Theme.border, gap: 12 },
-  previewWrap: { height: 220, borderRadius: 14, overflow: "hidden", backgroundColor: "#000", position: "relative" },
+  previewWrap: { height: 230, borderRadius: 14, overflow: "hidden", backgroundColor: "#000", position: "relative" },
   videoPreview: { width: "100%", height: "100%" },
-  removeBadge: { position: "absolute", top: 10, right: 10, width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(0,0,0,0.65)", alignItems: "center", justifyContent: "center" },
+  durBadge: { position: "absolute", left: 10, bottom: 10, flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(0,0,0,0.72)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
+  durBadgeText: { color: "#fff", fontSize: 11, fontWeight: "700" },
+  removeBadge: { position: "absolute", top: 10, right: 10, width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(0,0,0,0.7)", alignItems: "center", justifyContent: "center" },
   previewRow: { flexDirection: "row", gap: 12, alignItems: "center" },
   thumb: { width: 56, height: 80, borderRadius: 10, backgroundColor: "#000" },
   thumbPlaceholder: { alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: Theme.border },
@@ -359,17 +385,17 @@ const styles = StyleSheet.create({
   meta: { color: Theme.textMuted, fontSize: 12 },
   linkText: { color: Theme.accent, fontSize: 12, fontWeight: "700", marginTop: 2 },
   progressWrap: { height: 24, backgroundColor: Theme.bg, borderRadius: 12, overflow: "hidden", justifyContent: "center", borderWidth: 1, borderColor: Theme.border },
-  progressBar: { position: "absolute", left: 0, top: 0, bottom: 0, backgroundColor: Theme.brand },
+  progressBar: { position: "absolute", left: 0, top: 0, bottom: 0 },
   progressText: { color: "#fff", fontSize: 11, fontWeight: "700", textAlign: "center" },
   readyPill: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: Theme.successSoft, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10 },
   readyText: { color: Theme.success, fontSize: 12, fontWeight: "700" },
+  labelRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   label: { color: Theme.textSecondary, fontSize: 12, fontWeight: "600" },
+  charCount: { color: Theme.textMuted, fontSize: 11 },
   input: { backgroundColor: Theme.bg, borderWidth: 1, borderColor: Theme.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, color: Theme.text, fontSize: 14 },
   cats: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
   catChip: { paddingHorizontal: 11, paddingVertical: 7, borderRadius: 16, backgroundColor: Theme.bg, borderWidth: 1, borderColor: Theme.border },
   catActive: { backgroundColor: Theme.brandSoft, borderColor: Theme.brand },
   catText: { color: Theme.textMuted, fontSize: 12, fontWeight: "600" },
   catTextActive: { color: Theme.text },
-  submitBtn: { backgroundColor: Theme.brand, paddingVertical: 14, borderRadius: 12, alignItems: "center", marginTop: 4 },
-  submitText: { color: "#fff", fontWeight: "700", fontSize: 15 },
 });

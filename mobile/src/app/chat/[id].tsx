@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -13,6 +14,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { GradientAvatar, hapticLight, hapticSuccess } from "@/components/ui";
 import { api, timeAgo, type Message, type User } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Theme } from "@/lib/theme";
@@ -23,6 +25,7 @@ export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const otherId = Number(id);
   const { user: me } = useAuth();
+  const router = useRouter();
   const listRef = useRef<FlatList<Message>>(null);
 
   const [other, setOther] = useState<User | null>(null);
@@ -51,6 +54,7 @@ export default function ChatScreen() {
   const send = async () => {
     const body = text.trim();
     if (!body) return;
+    hapticLight();
     setText("");
     try {
       await api<Message>(`/messages/with/${otherId}`, { method: "POST", json: { body } });
@@ -63,6 +67,7 @@ export default function ChatScreen() {
 
   const toggleBlock = async () => {
     if (!other) return;
+    hapticLight();
     try {
       const updated = await api<User>(`/users/${other.id}/block`, {
         method: other.is_blocked ? "DELETE" : "POST",
@@ -81,6 +86,7 @@ export default function ChatScreen() {
         method: "POST",
         json: { target_type: reportTarget.type, target_id: reportTarget.id, reason: reason.trim() },
       });
+      hapticSuccess();
       setReportTarget(null);
       setReason("");
       Alert.alert("Reported", "Report sent to moderators.");
@@ -100,15 +106,28 @@ export default function ChatScreen() {
     >
       <Stack.Screen
         options={{
-          title: other?.display_name ?? "Chat",
+          title: "",
+          headerLeft: () =>
+            other ? (
+              <Pressable onPress={() => router.push(`/user/${other.id}`)} style={styles.headerUser}>
+                <GradientAvatar name={other.display_name} url={other.avatar_url} size={32} />
+                <View>
+                  <Text style={styles.headerName}>{other.display_name}</Text>
+                  <Text style={styles.headerRole}>{other.is_blocked ? "Blocked" : other.role}</Text>
+                </View>
+              </Pressable>
+            ) : null,
           headerRight: () =>
             other ? (
-              <View style={{ flexDirection: "row", gap: 14, alignItems: "center" }}>
-                <Pressable onPress={() => { setReason(""); setReportTarget({ type: "user", id: other.id, label: other.display_name }); }}>
-                  <Ionicons name="flag-outline" size={20} color={Theme.text} />
+              <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+                <Pressable
+                  style={styles.headerIconBtn}
+                  onPress={() => { setReason(""); setReportTarget({ type: "user", id: other.id, label: other.display_name }); }}
+                >
+                  <Ionicons name="flag-outline" size={18} color={Theme.text} />
                 </Pressable>
-                <Pressable onPress={toggleBlock}>
-                  <Ionicons name={other.is_blocked ? "shield-checkmark" : "ban"} size={20} color={other.is_blocked ? Theme.success : Theme.danger} />
+                <Pressable style={styles.headerIconBtn} onPress={toggleBlock}>
+                  <Ionicons name={other.is_blocked ? "shield-checkmark" : "ban"} size={18} color={other.is_blocked ? Theme.success : Theme.danger} />
                 </Pressable>
               </View>
             ) : null,
@@ -121,22 +140,32 @@ export default function ChatScreen() {
         keyExtractor={(m) => String(m.id)}
         contentContainerStyle={{ padding: 14, gap: 10 }}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
-        ListEmptyComponent={<Text style={styles.empty}>No messages yet. Say hello!</Text>}
+        ListEmptyComponent={<Text style={styles.empty}>No messages yet. Say hello! Long-press a received message to report it.</Text>}
         renderItem={({ item: m }) => {
           const mine = m.sender_id === me?.id;
           return (
             <View style={{ alignItems: mine ? "flex-end" : "flex-start" }}>
-              <Pressable
-                onLongPress={() => {
-                  if (!mine) {
+              {mine ? (
+                <LinearGradient
+                  colors={["#7C5CFF", "#4F6BFF"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.bubble, styles.bubbleMine]}
+                >
+                  <Text style={styles.bubbleText}>{m.body}</Text>
+                </LinearGradient>
+              ) : (
+                <Pressable
+                  onLongPress={() => {
+                    hapticLight();
                     setReason("");
                     setReportTarget({ type: "message", id: m.id, label: "this message" });
-                  }
-                }}
-                style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}
-              >
-                <Text style={styles.bubbleText}>{m.body}</Text>
-              </Pressable>
+                  }}
+                  style={[styles.bubble, styles.bubbleTheirs]}
+                >
+                  <Text style={styles.bubbleText}>{m.body}</Text>
+                </Pressable>
+              )}
               <View style={styles.metaRow}>
                 <Text style={styles.metaText}>{timeAgo(m.created_at)}</Text>
                 {mine && m.id === lastMineId && (
@@ -144,9 +173,9 @@ export default function ChatScreen() {
                     <Ionicons
                       name={m.read_at ? "checkmark-done" : "checkmark"}
                       size={13}
-                      color={m.read_at ? Theme.success : Theme.textMuted}
+                      color={m.read_at ? Theme.accent : Theme.textMuted}
                     />
-                    <Text style={[styles.metaText, m.read_at && { color: Theme.success }]}>
+                    <Text style={[styles.metaText, m.read_at && { color: Theme.accent }]}>
                       {m.read_at ? "Seen" : "Sent"}
                     </Text>
                   </View>
@@ -223,9 +252,13 @@ export default function ChatScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Theme.bg },
-  empty: { color: Theme.textMuted, textAlign: "center", marginTop: 40, fontSize: 13 },
+  headerUser: { flexDirection: "row", alignItems: "center", gap: 10 },
+  headerName: { color: Theme.text, fontWeight: "700", fontSize: 15 },
+  headerRole: { color: Theme.textMuted, fontSize: 11, textTransform: "capitalize" },
+  headerIconBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: Theme.surfaceElevated, alignItems: "center", justifyContent: "center" },
+  empty: { color: Theme.textMuted, textAlign: "center", marginTop: 40, fontSize: 13, paddingHorizontal: 24 },
   bubble: { maxWidth: "82%", borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10 },
-  bubbleMine: { backgroundColor: Theme.brand, borderBottomRightRadius: 4 },
+  bubbleMine: { borderBottomRightRadius: 4 },
   bubbleTheirs: { backgroundColor: Theme.surfaceElevated, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: Theme.border },
   bubbleText: { color: "#fff", fontSize: 15, lineHeight: 20 },
   metaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 3 },

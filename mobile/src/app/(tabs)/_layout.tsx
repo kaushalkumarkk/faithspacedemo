@@ -1,12 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import { useEffect, useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Theme } from "@/lib/theme";
 
 export default function TabsLayout() {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [unreadMsgs, setUnreadMsgs] = useState(0);
 
   useEffect(() => {
@@ -38,11 +40,13 @@ export default function TabsLayout() {
         tabBarStyle: {
           backgroundColor: Theme.surface,
           borderTopColor: Theme.border,
-          height: 60,
-          paddingBottom: 6,
-          paddingTop: 4,
+          // Grow with the system gesture bar / home indicator so the labels are never cut off.
+          height: 56 + insets.bottom,
+          paddingBottom: Math.max(insets.bottom, 6),
+          paddingTop: 6,
         },
         tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
+        tabBarAllowFontScaling: false,
         tabBarActiveTintColor: Theme.brand,
         tabBarInactiveTintColor: Theme.textMuted,
       }}

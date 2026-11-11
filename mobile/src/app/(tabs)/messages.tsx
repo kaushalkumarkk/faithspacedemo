@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { EmptyView, GradientAvatar, hapticLight } from "@/components/ui";
 import { api, timeAgo, type Conversation, type User } from "@/lib/api";
 import { Theme } from "@/lib/theme";
 
@@ -67,14 +68,13 @@ export default function MessagesScreen() {
               key={u.id}
               style={styles.resultRow}
               onPress={() => {
+                hapticLight();
                 setQuery("");
                 setResults([]);
                 router.push(`/chat/${u.id}`);
               }}
             >
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{u.display_name.slice(0, 1).toUpperCase()}</Text>
-              </View>
+              <GradientAvatar name={u.display_name} url={u.avatar_url} size={36} />
               <Text style={styles.name}>{u.display_name}</Text>
               <View style={styles.rolePill}>
                 <Text style={styles.roleText}>{u.role}</Text>
@@ -90,17 +90,21 @@ export default function MessagesScreen() {
         refreshing={refreshing}
         onRefresh={() => loadConvos(true)}
         ListEmptyComponent={
-          <View style={styles.emptyWrap}>
-            <Ionicons name="chatbubbles-outline" size={40} color={Theme.textMuted} />
-            <Text style={styles.emptyTitle}>No conversations yet</Text>
-            <Text style={styles.emptySub}>Search for a member above or message a creator from their profile.</Text>
-          </View>
+          <EmptyView
+            icon="chatbubbles-outline"
+            title="No conversations yet"
+            subtitle="Search for a member above or open a creator's profile to start a 1:1 chat."
+          />
         }
         renderItem={({ item: c }) => (
-          <Pressable style={styles.convoRow} onPress={() => router.push(`/chat/${c.user.id}`)}>
-            <View style={[styles.avatar, c.unread_count > 0 && styles.avatarUnread]}>
-              <Text style={styles.avatarText}>{c.user.display_name.slice(0, 1).toUpperCase()}</Text>
-            </View>
+          <Pressable
+            style={({ pressed }) => [styles.convoRow, pressed && { backgroundColor: Theme.surface }]}
+            onPress={() => {
+              hapticLight();
+              router.push(`/chat/${c.user.id}`);
+            }}
+          >
+            <GradientAvatar name={c.user.display_name} url={c.user.avatar_url} size={48} ring={c.unread_count > 0} />
             <View style={{ flex: 1 }}>
               <View style={styles.convoTop}>
                 <Text style={styles.name}>{c.user.display_name}</Text>
@@ -129,9 +133,6 @@ const styles = StyleSheet.create({
   searchResults: { marginHorizontal: 12, marginBottom: 8, backgroundColor: Theme.surfaceElevated, borderRadius: 14, borderWidth: 1, borderColor: Theme.borderStrong, overflow: "hidden" },
   resultRow: { flexDirection: "row", alignItems: "center", gap: 10, padding: 12, borderBottomWidth: 1, borderBottomColor: Theme.border },
   convoRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Theme.border },
-  avatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: Theme.brand, alignItems: "center", justifyContent: "center" },
-  avatarUnread: { borderWidth: 2, borderColor: Theme.accent },
-  avatarText: { color: "#fff", fontWeight: "800", fontSize: 16 },
   convoTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   name: { color: Theme.text, fontWeight: "700", fontSize: 15 },
   time: { color: Theme.textMuted, fontSize: 11 },
@@ -141,7 +142,4 @@ const styles = StyleSheet.create({
   previewUnread: { color: Theme.text, fontWeight: "600" },
   badge: { minWidth: 22, height: 22, borderRadius: 11, backgroundColor: Theme.brand, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
   badgeText: { color: "#fff", fontSize: 11, fontWeight: "800" },
-  emptyWrap: { alignItems: "center", paddingTop: 64, paddingHorizontal: 32, gap: 8 },
-  emptyTitle: { color: Theme.text, fontSize: 16, fontWeight: "700" },
-  emptySub: { color: Theme.textMuted, fontSize: 13, textAlign: "center" },
 });

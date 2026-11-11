@@ -1,8 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { EmptyView, GradientAvatar, GradientButton, hapticLight, hapticSuccess } from "@/components/ui";
 import { api, formatTime, mediaSrc, type Page, type User, type Video } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Theme } from "@/lib/theme";
@@ -35,6 +37,7 @@ export default function UserProfileScreen() {
 
   const toggleFollow = async () => {
     if (!profile) return;
+    hapticLight();
     try {
       setProfile(await api<User>(`/users/${profile.id}/follow`, { method: profile.is_following ? "DELETE" : "POST" }));
     } catch (e) {
@@ -44,6 +47,7 @@ export default function UserProfileScreen() {
 
   const toggleBlock = async () => {
     if (!profile) return;
+    hapticLight();
     try {
       const updated = await api<User>(`/users/${profile.id}/block`, { method: profile.is_blocked ? "DELETE" : "POST" });
       setProfile(updated);
@@ -57,6 +61,7 @@ export default function UserProfileScreen() {
     if (!profile || reason.trim().length < 3) return;
     try {
       await api("/reports", { method: "POST", json: { target_type: "user", target_id: profile.id, reason: reason.trim() } });
+      hapticSuccess();
       setReportOpen(false);
       setReason("");
       Alert.alert("Reported", "User reported to moderators.");
@@ -70,11 +75,9 @@ export default function UserProfileScreen() {
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
       <Stack.Screen options={{ title: profile.display_name }} />
-      <View style={styles.card}>
+      <LinearGradient colors={["#1C153D", "#121526", Theme.surface]} style={styles.card}>
         <View style={styles.topRow}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{profile.display_name.slice(0, 1).toUpperCase()}</Text>
-          </View>
+          <GradientAvatar name={profile.display_name} url={profile.avatar_url} size={62} ring />
           <View style={{ flex: 1 }}>
             <Text style={styles.name}>{profile.display_name}</Text>
             <Text style={styles.role}>{profile.role}</Text>
@@ -101,9 +104,13 @@ export default function UserProfileScreen() {
           <View style={styles.actions}>
             {!profile.is_blocked && !profile.blocked_by_target && (
               <>
-                <Pressable style={styles.primaryBtn} onPress={toggleFollow}>
-                  <Text style={styles.btnText}>{profile.is_following ? "Following" : "Follow"}</Text>
-                </Pressable>
+                {profile.is_following ? (
+                  <Pressable style={styles.secBtn} onPress={toggleFollow}>
+                    <Text style={styles.btnText}>Following</Text>
+                  </Pressable>
+                ) : (
+                  <GradientButton label="Follow" onPress={toggleFollow} style={{ minWidth: 96 }} />
+                )}
                 <Pressable style={styles.secBtn} onPress={() => router.push(`/chat/${profile.id}`)}>
                   <Ionicons name="chatbubble-outline" size={14} color={Theme.text} />
                   <Text style={styles.btnText}>Message</Text>
@@ -119,23 +126,27 @@ export default function UserProfileScreen() {
             </Pressable>
           </View>
         )}
-      </View>
+      </LinearGradient>
 
-      <View style={styles.grid}>
-        {videos.map((v) => {
-          const thumb = mediaSrc(v.thumbnail_url, v.status);
-          return (
-            <View key={v.id} style={styles.gridItem}>
-              {thumb ? <Image source={{ uri: thumb }} style={styles.gridImg} contentFit="cover" /> : <View style={styles.gridImg} />}
-              {v.duration_seconds != null && <Text style={styles.dur}>{formatTime(v.duration_seconds)}</Text>}
-              <View style={styles.gridCaption}>
-                <Text style={styles.gridTitle} numberOfLines={1}>{v.title}</Text>
-                <Text style={styles.gridMeta}>{v.view_count ?? 0} views</Text>
-              </View>
-            </View>
-          );
-        })}
-      </View>
+      {videos.length === 0 ? (
+        <EmptyView icon="film-outline" title={profile.is_blocked ? "Videos hidden (user blocked)" : "No published videos yet"} />
+      ) : (
+        <View style={styles.grid}>
+          {videos.map((v) => {
+            const thumb = mediaSrc(v.thumbnail_url, v.status);
+            return (
+              <Pressable key={v.id} style={styles.gridItem} onPress={() => router.push(`/(tabs)?v=${v.id}`)}>
+                {thumb ? <Image source={{ uri: thumb }} style={styles.gridImg} contentFit="cover" /> : <View style={styles.gridImg} />}
+                {v.duration_seconds != null && <Text style={styles.dur}>{formatTime(v.duration_seconds)}</Text>}
+                <LinearGradient colors={["transparent", "rgba(0,0,0,0.85)"]} style={styles.gridCaption}>
+                  <Text style={styles.gridTitle} numberOfLines={1}>{v.title}</Text>
+                  <Text style={styles.gridMeta}>{v.view_count ?? 0} views</Text>
+                </LinearGradient>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
 
       <Modal visible={reportOpen} transparent animationType="fade" onRequestClose={() => setReportOpen(false)}>
         <View style={styles.modalBackdrop}>
@@ -156,9 +167,9 @@ export default function UserProfileScreen() {
               value={reason}
               onChangeText={setReason}
             />
-            <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 10 }}>
+            <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 10, alignItems: "center" }}>
               <Pressable onPress={() => setReportOpen(false)} style={{ padding: 10 }}><Text style={{ color: Theme.textSecondary }}>Cancel</Text></Pressable>
-              <Pressable style={[styles.primaryBtn, reason.trim().length < 3 && { opacity: 0.5 }]} disabled={reason.trim().length < 3} onPress={sendReport}><Text style={styles.btnText}>Send</Text></Pressable>
+              <GradientButton label="Send" onPress={sendReport} disabled={reason.trim().length < 3} />
             </View>
           </View>
         </View>
@@ -170,30 +181,27 @@ export default function UserProfileScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Theme.bg },
   container: { padding: 14, gap: 14 },
-  card: { backgroundColor: Theme.surface, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: Theme.border, gap: 12 },
+  card: { borderRadius: 22, padding: 16, borderWidth: 1, borderColor: Theme.borderStrong, gap: 12 },
   topRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  avatar: { width: 54, height: 54, borderRadius: 27, backgroundColor: Theme.brand, alignItems: "center", justifyContent: "center" },
-  avatarText: { color: "#fff", fontSize: 20, fontWeight: "800" },
   name: { color: Theme.text, fontSize: 20, fontWeight: "700" },
-  role: { color: Theme.textMuted, fontSize: 12, textTransform: "uppercase", marginTop: 2 },
+  role: { color: Theme.accent, fontSize: 11, textTransform: "uppercase", fontWeight: "800", marginTop: 2 },
   bio: { color: Theme.textSecondary, fontSize: 14 },
   statRow: { flexDirection: "row", gap: 8 },
-  statBox: { flex: 1, backgroundColor: Theme.bg, borderRadius: 12, paddingVertical: 10, alignItems: "center", borderWidth: 1, borderColor: Theme.border },
+  statBox: { flex: 1, backgroundColor: "rgba(9,10,16,0.55)", borderRadius: 12, paddingVertical: 10, alignItems: "center", borderWidth: 1, borderColor: Theme.border },
   statNum: { color: Theme.text, fontSize: 16, fontWeight: "800" },
   statLabel: { color: Theme.textMuted, fontSize: 11, marginTop: 2 },
-  actions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  primaryBtn: { backgroundColor: Theme.brand, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10 },
-  secBtn: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: Theme.surfaceElevated, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10, borderWidth: 1, borderColor: Theme.border },
-  dangerBtn: { backgroundColor: Theme.dangerSoft, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10 },
+  actions: { flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "center" },
+  secBtn: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: Theme.surfaceElevated, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 12, borderWidth: 1, borderColor: Theme.border },
+  dangerBtn: { backgroundColor: Theme.dangerSoft, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 12 },
   btnText: { color: Theme.text, fontWeight: "700", fontSize: 13 },
   dangerText: { color: Theme.danger, fontWeight: "700", fontSize: 13 },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  gridItem: { width: "48%", aspectRatio: 9 / 16, borderRadius: 14, overflow: "hidden", backgroundColor: "#000", position: "relative" },
+  gridItem: { width: "48%", aspectRatio: 9 / 16, borderRadius: 16, overflow: "hidden", backgroundColor: "#000", position: "relative" },
   gridImg: { width: "100%", height: "100%", backgroundColor: Theme.surface },
-  dur: { position: "absolute", top: 6, right: 6, backgroundColor: "rgba(0,0,0,0.72)", color: "#fff", fontSize: 10, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, fontWeight: "700" },
-  gridCaption: { position: "absolute", left: 0, right: 0, bottom: 0, padding: 8, backgroundColor: "rgba(0,0,0,0.6)" },
-  gridTitle: { color: "#fff", fontSize: 12, fontWeight: "700" },
-  gridMeta: { color: Theme.textSecondary, fontSize: 10, marginTop: 1 },
+  dur: { position: "absolute", top: 8, right: 8, backgroundColor: "rgba(0,0,0,0.72)", color: "#fff", fontSize: 10, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, fontWeight: "700" },
+  gridCaption: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: 10, paddingVertical: 10, paddingTop: 24 },
+  gridTitle: { color: "#fff", fontSize: 13, fontWeight: "700" },
+  gridMeta: { color: Theme.textSecondary, fontSize: 10, marginTop: 2 },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", padding: 20 },
   dialog: { backgroundColor: Theme.surface, borderRadius: 20, padding: 18, gap: 12, borderWidth: 1, borderColor: Theme.border },
   chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
