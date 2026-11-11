@@ -452,3 +452,64 @@ def test_admin_permanent_content_and_user_removal(client, creator, viewer, admin
     assert client.delete(f"/users/{cid}", headers=admin).status_code == 204
     assert client.get(f"/users/{cid}").status_code == 404
     assert client.get(va2["url"]).status_code == 404
+
+
+# ---------- guest access, saved videos, view counts ----------
+def _guest(client) -> dict:
+    r = client.post("/auth/guest")
+    assert r.status_code == 201, r.text
+    assert r.json()["user"]["is_guest"] is True
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+def test_guest_can_engage_but_not_message_or_follow(client, creator, approved_video):
+    guest = _guest(client)
+    cid = client.get("/auth/me", headers=creator).json()["id"]
+    assert client.post(f"/videos/{approved_video['id']}/likes", headers=guest).status_code == 200
+    assert client.post(f"/videos/{approved_video['id']}/comments", headers=guest, json={"body": "Hello from a guest"}).status_code == 201
+    assert client.post(f"/users/{cid}/follow", headers=guest).json()["error"]["code"] == "guest_restricted"
+    assert client.post(f"/messages/with/{cid}", headers=guest, json={"body": "hi"}).status_code == 403
+    assert client.get("/messages/unread-count", headers=guest).status_code == 403
+    assert client.post("/videos", headers=guest, json={}).status_code in (403, 422)
+
+
+def test_guest_upgrade_keeps_activity_and_signs_in_with_password(client, approved_video):
+    guest = _guest(client)
+    client.post(f"/videos/{approved_video['id']}/likes", headers=guest)
+    body = {"email": "New.Person@example.com", "password": "Sup3rSecret!", "display_name": "New Person", "role": "viewer"}
+    r = client.post("/auth/upgrade", headers=guest, json=body)
+    assert r.status_code == 200 and r.json()["user"]["is_guest"] is False
+    assert client.post("/auth/upgrade", headers={"Authorization": f"Bearer {r.json()['access_token']}"}, json=body).json()["error"]["code"] == "not_guest"
+    again = client.post("/auth/login", json={"email": "new.person@example.com", "password": "Sup3rSecret!"})
+    assert again.status_code == 200
+    h = {"Authorization": f"Bearer {again.json()['access_token']}"}
+    assert client.get(f"/videos/{approved_video['id']}", headers=h).json()["liked_by_me"] is True
+    # a second guest cannot take the same email
+    assert client.post("/auth/upgrade", headers=_guest(client), json=body).json()["error"]["code"] == "email_taken"
+
+
+def test_save_and_unsave_video(client, viewer, approved_video):
+    vid = approved_video["id"]
+    assert client.get("/videos/saved", headers=viewer).json() == []
+    assert client.post(f"/videos/{vid}/save", headers=viewer).json() == {"saved": True}
+    assert client.post(f"/videos/{vid}/save", headers=viewer).status_code == 200  # idempotent
+    assert client.get(f"/videos/{vid}", headers=viewer).json()["saved_by_me"] is True
+    assert [v["id"] for v in client.get("/videos/saved", headers=viewer).json()] == [vid]
+    assert client.delete(f"/videos/{vid}/save", headers=viewer).json() == {"saved": False}
+    assert client.get("/videos/saved", headers=viewer).json() == []
+
+
+def test_saved_list_drops_videos_that_are_no_longer_public(client, viewer, admin, approved_video):
+    vid = approved_video["id"]
+    client.post(f"/videos/{vid}/save", headers=viewer)
+    assert client.post(f"/admin/moderation/video/{vid}/hide", headers=admin, json={}).status_code == 200
+    assert client.get("/videos/saved", headers=viewer).json() == []
+
+
+def test_view_count_is_throttled_and_ignores_the_owner(client, creator, viewer, approved_video):
+    vid = approved_video["id"]
+    assert client.post(f"/videos/{vid}/view", headers=viewer).json()["view_count"] == 1
+    assert client.post(f"/videos/{vid}/view", headers=viewer).json()["view_count"] == 1  # same viewer, same window
+    assert client.post(f"/videos/{vid}/view", headers=creator).json()["view_count"] == 1  # owner is not counted
+    assert client.post(f"/videos/{vid}/view").json()["view_count"] == 2  # anonymous (by IP) counts once
+    assert client.get(f"/videos/{vid}", headers=viewer).json()["view_count"] == 2

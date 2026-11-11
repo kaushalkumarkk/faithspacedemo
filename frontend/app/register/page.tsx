@@ -17,16 +17,17 @@ const schema = z.object({
 type Form = z.infer<typeof schema>;
 
 export default function RegisterPage() {
-  const { register: signUp } = useAuth();
+  const { user, register: signUp, upgrade } = useAuth();
+  const isGuest = !!user?.is_guest;
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<Form>({ resolver: zodResolver(schema), defaultValues: { role: "viewer" } });
   const submit = async (v: Form) => {
-    try { await signUp(v); toast.success("Account created"); } catch (e) { toast.error((e as Error).message); }
+    try { await (isGuest ? upgrade(v) : signUp(v)); toast.success("Account created"); } catch (e) { toast.error((e as Error).message); }
   };
   return (
     <AuthLayout>
       <div>
         <h1 className="font-display text-3xl font-semibold tracking-tight">Create your account</h1>
-        <p className="mt-1 text-sm text-muted">Join the community in under a minute.</p>
+        <p className="mt-1 text-sm text-muted">{isGuest ? "Keep your likes, comments and saved videos by turning this guest session into an account." : "Join the community in under a minute."}</p>
       </div>
       <form onSubmit={handleSubmit(submit)} className="space-y-4" noValidate>
         <Field label="Display name" error={errors.display_name?.message}><Input autoComplete="name" className="h-11" {...register("display_name")} /></Field>

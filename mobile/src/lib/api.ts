@@ -82,7 +82,7 @@ export async function api<T = unknown>(path: string, init: RequestInit & { json?
   try {
     res = await fetch(`${cachedApiUrl}${path}`, { ...init, headers, body });
   } catch {
-    throw new ApiError(0, "network", `Cannot reach API at ${cachedApiUrl}. Check your server URL & Wi-Fi.`);
+    throw new ApiError(0, "network", "Can’t reach the server right now. Check your connection and try again.");
   }
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => null);
@@ -154,6 +154,7 @@ export interface User {
   bio: string;
   role: Role;
   is_active: boolean;
+  is_guest?: boolean;
   avatar_url: string | null;
   follower_count: number;
   following_count: number;

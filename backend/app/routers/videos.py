@@ -1,14 +1,15 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import schemas as s
 from ..db import get_db
-from ..deps import PageParams, creator_user, current_user, err, optional_user
-from ..models import Comment, Episode, Like, User, Video
+from ..deps import PageParams, client_ip, creator_user, current_user, err, optional_user
+from ..models import Bookmark, Comment, Episode, Like, User, Video
 from ..services import (
     audit, blocked_peer_ids, delete_asset_if_unused, get_asset_owned, notify, user_out, video_out,
 )
+from ..security import limiter
 from ..storage import delete_key
 
 videos_router = APIRouter(prefix="/videos", tags=["videos"])
@@ -47,6 +48,17 @@ def feed(q: str | None = None, category: str | None = None, owner_id: int | None
 def mine(user: User = Depends(current_user), db: Session = Depends(get_db)):
     rows = db.scalars(select(Video).where(Video.owner_id == user.id).order_by(Video.id.desc())).unique().all()
     return [video_out(db, v, user) for v in rows]
+
+
+@videos_router.get("/saved", response_model=list[s.VideoOut])
+def saved(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Videos the user bookmarked, newest save first. Videos that are no longer approved are left out."""
+    stmt = (select(Video).join(Bookmark, Bookmark.video_id == Video.id)
+            .where(Bookmark.user_id == user.id, Video.status == "approved").order_by(Bookmark.id.desc()))
+    blocked = blocked_peer_ids(db, user.id)
+    if blocked:
+        stmt = stmt.where(Video.owner_id.notin_(blocked))
+    return [video_out(db, v, user) for v in db.scalars(stmt).unique().all()]
 
 
 @videos_router.post("", response_model=s.VideoOut, status_code=201)
@@ -143,6 +155,39 @@ def unlike(video_id: int, user: User = Depends(current_user), db: Session = Depe
         db.delete(row)
         db.commit()
     return _like_state(db, v, user)
+
+
+# ---------- saved + views ----------
+@videos_router.post("/{video_id}/save")
+def save_video(video_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    v = _visible(db.get(Video, video_id), user)
+    if not db.scalar(select(Bookmark).where(Bookmark.video_id == v.id, Bookmark.user_id == user.id)):
+        db.add(Bookmark(video_id=v.id, user_id=user.id))
+        db.commit()
+    return {"saved": True}
+
+
+@videos_router.delete("/{video_id}/save")
+def unsave_video(video_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    row = db.scalar(select(Bookmark).where(Bookmark.video_id == video_id, Bookmark.user_id == user.id))
+    if row:
+        db.delete(row)
+        db.commit()
+    return {"saved": False}
+
+
+@videos_router.post("/{video_id}/view")
+def record_view(video_id: int, request: Request, viewer: User | None = Depends(optional_user), db: Session = Depends(get_db)):
+    """Count one play of an approved video. Not unique viewers: one count per viewer per video per 30 minutes; owners don't count."""
+    v = _visible(db.get(Video, video_id), viewer)
+    if v.status == "approved" and not (viewer and viewer.id == v.owner_id):
+        try:
+            limiter.check(f"view:{viewer.id if viewer else client_ip(request)}:{v.id}", 1, window=1800)
+            v.view_count = (v.view_count or 0) + 1
+            db.commit()
+        except HTTPException:
+            pass
+    return {"view_count": v.view_count or 0}
 
 
 # ---------- comments ----------

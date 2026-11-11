@@ -44,6 +44,13 @@ def require_roles(*roles: str):
     return dep
 
 
+def member_user(user: User = Depends(current_user)) -> User:
+    """A real (non-guest) account. Guests may browse, like, comment and save, but not message or follow."""
+    if user.is_guest:
+        raise err(403, "guest_restricted", "Create a free account to use this feature.")
+    return user
+
+
 creator_user = require_roles("creator", "admin")
 admin_user = require_roles("admin")
 

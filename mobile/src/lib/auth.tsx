@@ -7,6 +7,7 @@ interface AuthState {
   apiUrl: string;
   login: (email: string, password: string) => Promise<User>;
   register: (body: { email: string; password: string; display_name: string; role: "viewer" | "creator" }) => Promise<User>;
+  guest: () => Promise<User>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   updateApiUrl: (url: string) => Promise<string>;
@@ -60,6 +61,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return res.user;
   };
 
+  const guest = async () => {
+    const res = await api<{ access_token: string; user: User }>("/auth/guest", { method: "POST" });
+    await setStoredToken(res.access_token);
+    setUser(res.user);
+    return res.user;
+  };
+
   const logout = async () => {
     await setStoredToken(null);
     setUser(null);
@@ -72,7 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, apiUrl, login, register, logout, refresh, updateApiUrl }}>
+    <AuthContext.Provider value={{ user, loading, apiUrl, login, register, guest, logout, refresh, updateApiUrl }}>
       {children}
     </AuthContext.Provider>
   );

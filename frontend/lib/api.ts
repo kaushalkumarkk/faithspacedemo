@@ -26,7 +26,7 @@ export async function api<T = unknown>(path: string, init: RequestInit & { json?
   try {
     res = await fetch(`${API_URL}${path}`, { ...init, headers, body });
   } catch {
-    throw new ApiError(0, "network", "Cannot reach the API. Is the backend running on " + API_URL + "?");
+    throw new ApiError(0, "network", "Can’t reach the server right now. Check your connection and try again.");
   }
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => null);
@@ -78,7 +78,7 @@ export function mediaSrc(url: string | null | undefined, status?: string): strin
 export type Role = "viewer" | "creator" | "admin";
 export type Status = "pending" | "approved" | "rejected" | "hidden";
 export interface User {
-  id: number; email: string | null; display_name: string; bio: string; role: Role; is_active: boolean;
+  id: number; email: string | null; display_name: string; bio: string; role: Role; is_active: boolean; is_guest?: boolean;
   avatar_url: string | null; follower_count: number; following_count: number; video_count: number;
   is_following: boolean; is_blocked?: boolean; blocked_by_target?: boolean; created_at: string;
 }
@@ -86,7 +86,7 @@ export interface Asset { id: number; kind: string; url: string; mime_type: strin
 export interface Video {
   id: number; title: string; description: string; category: string; status: Status; rejection_reason: string | null;
   video_url: string; thumbnail_url: string | null; duration_seconds: number | null; mime_type: string;
-  owner: User; like_count: number; comment_count: number; liked_by_me: boolean;
+  owner: User; like_count: number; comment_count: number; liked_by_me: boolean; saved_by_me?: boolean; view_count?: number;
   created_at: string; published_at: string | null;
 }
 export interface Comment { id: number; video_id: number; parent_id: number | null; body: string; author: User; created_at: string; replies: Comment[] }

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from . import schemas as s
 from .models import (
+    Bookmark,
     AuditLog, Comment, Episode, Follow, Like, MediaAsset, Notification, Podcast, User, UserBlock, Video,
 )
 
@@ -44,7 +45,7 @@ def blocked_peer_ids(db: Session, user_id: int) -> set[int]:
 
 def user_out(db: Session, u: User, viewer: User | None = None, full: bool = False) -> s.UserOut:
     out = s.UserOut(
-        id=u.id, display_name=u.display_name, bio=u.bio, role=u.role, is_active=u.is_active,
+        id=u.id, display_name=u.display_name, bio=u.bio, role=u.role, is_active=u.is_active, is_guest=u.is_guest,
         avatar_url=s.media_url(u.avatar), created_at=u.created_at,
         email=u.email if (viewer and (viewer.id == u.id or viewer.role == "admin")) else None,
     )
@@ -70,12 +71,13 @@ def video_out(db: Session, v: Video, viewer: User | None) -> s.VideoOut:
     likes = db.scalar(select(func.count()).select_from(Like).where(Like.video_id == v.id)) or 0
     comments = db.scalar(select(func.count()).select_from(Comment).where(Comment.video_id == v.id)) or 0
     liked = bool(viewer and db.scalar(select(func.count()).select_from(Like).where(Like.video_id == v.id, Like.user_id == viewer.id)))
+    saved = bool(viewer and db.scalar(select(func.count()).select_from(Bookmark).where(Bookmark.video_id == v.id, Bookmark.user_id == viewer.id)))
     return s.VideoOut(
         id=v.id, title=v.title, description=v.description, category=v.category, status=v.status,
         rejection_reason=v.rejection_reason, video_url=s.media_url(v.asset),
         thumbnail_url=s.media_url(v.thumbnail), duration_seconds=v.duration_seconds,
         mime_type=v.asset.mime_type,
-        owner=user_out(db, v.owner, viewer), like_count=likes, comment_count=comments, liked_by_me=liked,
+        owner=user_out(db, v.owner, viewer), like_count=likes, comment_count=comments, liked_by_me=liked, saved_by_me=saved, view_count=v.view_count or 0,
         created_at=v.created_at, published_at=v.published_at,
     )
 

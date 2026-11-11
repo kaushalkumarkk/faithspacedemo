@@ -1,3 +1,5 @@
+import secrets
+
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
@@ -5,7 +7,7 @@ from sqlalchemy.orm import Session
 from .. import schemas as s
 from ..config import settings
 from ..db import get_db
-from ..deps import PageParams, admin_user, client_ip, current_user, err, optional_user
+from ..deps import PageParams, admin_user, client_ip, current_user, err, member_user, optional_user
 from ..models import Follow, MediaAsset, ModerationAction, Podcast, User, UserBlock, Video
 from ..security import create_token, hash_password, limiter, verify_password
 from ..services import audit, blocked_peer_ids, get_asset_owned, is_blocked_between, notify, user_out
@@ -38,6 +40,35 @@ def login(body: s.LoginIn, request: Request, db: Session = Depends(get_db)):
         raise err(403, "suspended", "This account has been suspended.")
     audit(db, user, "user.login", "user", user.id)
     db.commit()
+    return s.TokenOut(access_token=create_token(user.id, user.role), user=user_out(db, user, user, full=True))
+
+
+@auth_router.post("/guest", response_model=s.TokenOut, status_code=201)
+def guest_login(request: Request, db: Session = Depends(get_db)):
+    """Instant read-mostly session with no email or password: browse, like, comment and save."""
+    limiter.check(f"guest:{client_ip(request)}", settings.login_rate_limit)
+    tag = secrets.token_hex(6)
+    user = User(email=f"guest-{tag}@guest.local", password_hash=hash_password(secrets.token_urlsafe(24)),
+                display_name=f"Guest {tag[:4].upper()}", role="viewer", is_guest=True)
+    db.add(user)
+    db.flush()
+    audit(db, user, "user.guest", "user", user.id)
+    db.commit()
+    return s.TokenOut(access_token=create_token(user.id, user.role), user=user_out(db, user, user, full=True))
+
+
+@auth_router.post("/upgrade", response_model=s.TokenOut)
+def upgrade_guest(body: s.RegisterIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Turn the current guest into a full account; likes, comments and saved videos are kept."""
+    if not user.is_guest:
+        raise err(400, "not_guest", "This account is already a full account.")
+    if db.scalar(select(User).where(User.email == body.email)):
+        raise err(409, "email_taken", "An account with that email already exists.")
+    user.email, user.password_hash = body.email, hash_password(body.password)
+    user.display_name, user.role, user.is_guest = body.display_name, body.role, False
+    audit(db, user, "user.upgrade", "user", user.id)
+    db.commit()
+    db.refresh(user)
     return s.TokenOut(access_token=create_token(user.id, user.role), user=user_out(db, user, user, full=True))
 
 
@@ -75,7 +106,7 @@ def update_me(body: s.ProfileUpdate, user: User = Depends(current_user), db: Ses
 
 
 @users_router.get("/search", response_model=list[s.UserOut])
-def search_users(q: str = "", me: User = Depends(current_user), db: Session = Depends(get_db)):
+def search_users(q: str = "", me: User = Depends(member_user), db: Session = Depends(get_db)):
     """Find people to message (display-name match, active accounts, excludes yourself and blocked users)."""
     q = q.strip()
     if len(q) < 2:
@@ -151,7 +182,7 @@ def delete_user(user_id: int, admin: User = Depends(admin_user), db: Session = D
 
 
 @users_router.post("/{user_id}/follow", response_model=s.UserOut)
-def follow(user_id: int, me: User = Depends(current_user), db: Session = Depends(get_db)):
+def follow(user_id: int, me: User = Depends(member_user), db: Session = Depends(get_db)):
     target = db.get(User, user_id)
     if not target:
         raise err(404, "not_found", "User not found.")
@@ -168,7 +199,7 @@ def follow(user_id: int, me: User = Depends(current_user), db: Session = Depends
 
 
 @users_router.delete("/{user_id}/follow", response_model=s.UserOut)
-def unfollow(user_id: int, me: User = Depends(current_user), db: Session = Depends(get_db)):
+def unfollow(user_id: int, me: User = Depends(member_user), db: Session = Depends(get_db)):
     target = db.get(User, user_id)
     if not target:
         raise err(404, "not_found", "User not found.")
@@ -180,7 +211,7 @@ def unfollow(user_id: int, me: User = Depends(current_user), db: Session = Depen
 
 
 @users_router.post("/{user_id}/block", response_model=s.UserOut)
-def block_user(user_id: int, me: User = Depends(current_user), db: Session = Depends(get_db)):
+def block_user(user_id: int, me: User = Depends(member_user), db: Session = Depends(get_db)):
     target = db.get(User, user_id)
     if not target:
         raise err(404, "not_found", "User not found.")

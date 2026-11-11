@@ -37,6 +37,8 @@ export default defineConfig({
         STORAGE_DIR: path.join(e2eDir, "storage"),
         CORS_ORIGINS: WEB,
         LOGIN_RATE_LIMIT: "1000",
+        UPLOAD_RATE_LIMIT: "1000",
+        MESSAGE_RATE_LIMIT: "1000",
         BCRYPT_ROUNDS: "4",
       },
     },

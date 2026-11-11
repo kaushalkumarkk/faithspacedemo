@@ -1,7 +1,7 @@
 "use client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Bell, GitBranch, Headphones, LayoutDashboard, LogIn, LogOut, MessageSquare, Moon, PlaySquare, PlusSquare, Sun, UserRound, Video,
+  Bell, Bookmark, GitBranch, Headphones, LayoutDashboard, LogIn, LogOut, MessageSquare, Moon, PlaySquare, PlusSquare, Sun, UserRound, Video,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import Link from "next/link";
@@ -24,7 +24,7 @@ export function Logo({ className }: { className?: string }) {
 
 function useNav() {
   const { user } = useAuth();
-  const unread = useQuery({ queryKey: ["msg-unread"], queryFn: () => api<{ count: number }>("/messages/unread-count"), refetchInterval: 8000, enabled: !!user });
+  const unread = useQuery({ queryKey: ["msg-unread"], queryFn: () => api<{ count: number }>("/messages/unread-count"), refetchInterval: 8000, enabled: !!user && !user.is_guest });
   const items: { href: string; label: string; icon: React.ElementType; mobile: boolean; badge?: number }[] = [
     { href: "/", label: "Watch", icon: PlaySquare, mobile: true },
     { href: "/podcasts", label: "Podcasts", icon: Headphones, mobile: true },
@@ -33,8 +33,9 @@ function useNav() {
     items.push({ href: "/upload", label: "Create", icon: PlusSquare, mobile: true });
     items.push({ href: "/studio", label: "My studio", icon: Video, mobile: false });
   }
-  if (user) items.push({ href: "/messages", label: "Messages", icon: MessageSquare, mobile: true, badge: unread.data?.count });
-  if (user) items.push({ href: "/notifications", label: "Notifications", icon: Bell, mobile: true });
+  if (user) items.push({ href: "/saved", label: "Saved", icon: Bookmark, mobile: true });
+  if (user && !user.is_guest) items.push({ href: "/messages", label: "Messages", icon: MessageSquare, mobile: true, badge: unread.data?.count });
+  if (user) items.push({ href: "/notifications", label: "Notifications", icon: Bell, mobile: false });
   if (user?.role === "admin") items.push({ href: "/admin", label: "Admin", icon: LayoutDashboard, mobile: true });
   return items;
 }
@@ -123,10 +124,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (loading) return;
     if (!user && !bare) router.replace("/login");
-    if (user && bare) router.replace(user.role === "admin" ? "/admin" : user.role === "creator" ? "/upload" : "/");
+    if (user && !user.is_guest && bare) router.replace(user.role === "admin" ? "/admin" : user.role === "creator" ? "/upload" : "/");
   }, [loading, user, bare, router]);
 
-  if (bare && (loading || !user)) return <>{children}</>;
+  if (bare && (loading || !user || user.is_guest)) return <>{children}</>;
   if (loading || !user)
     return (
       <div className="grid min-h-dvh place-items-center bg-bg" role="status" aria-label="Loading">
@@ -163,9 +164,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <NotificationBell />
           {user ? (
             <>
+              {user.is_guest && <Link href="/register" data-testid="guest-upgrade"><Button size="sm">Create account</Button></Link>}
               <Link href={`/profile/${user.id}`} className="flex items-center gap-2 rounded-xl px-2 py-1 hover:bg-elevated" aria-label="My profile">
                 <Avatar name={user.display_name} url={user.avatar_url} size={28} />
-                <span className="hidden text-sm font-medium md:block">{user.display_name}<span className="ml-2 rounded-full bg-elevated px-2 py-0.5 text-[10px] uppercase text-muted" data-testid="role-badge">{user.role}</span></span>
+                <span className="hidden text-sm font-medium md:block">{user.display_name}<span className="ml-2 rounded-full bg-elevated px-2 py-0.5 text-[10px] uppercase text-muted" data-testid="role-badge">{user.is_guest ? "guest" : user.role}</span></span>
               </Link>
               <Button variant="ghost" size="icon" aria-label="Log out" onClick={() => { logout(); router.push("/login"); }}><LogOut className="h-5 w-5" /></Button>
             </>

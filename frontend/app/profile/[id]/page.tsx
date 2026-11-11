@@ -96,14 +96,16 @@ export default function ProfilePage() {
           <p className="text-sm"><b data-testid="follower-count">{p.follower_count}</b> followers · <b>{p.following_count}</b> following · <b>{p.video_count}</b> videos</p>
           {mine ? !editing && <Button size="sm" variant="outline" onClick={() => { setName(p.display_name); setBio(p.bio); setEditing(true); }}>Edit profile</Button>
             : <div className="flex flex-wrap justify-center gap-2 sm:justify-start">
-                {!p.is_blocked && !p.blocked_by_target && (
+                {me?.is_guest ? (
+                  <Link href="/register" data-testid="guest-cta" className="text-sm font-medium text-brand">Create a free account to follow or message {p.display_name}</Link>
+                ) : !p.is_blocked && !p.blocked_by_target && (
                   <>
                     <Button size="sm" variant={p.is_following ? "outline" : "primary"} data-testid="follow-btn" loading={follow.isPending}
                       onClick={() => (me ? follow.mutate() : router.push("/login"))}>{p.is_following ? "Following" : "Follow"}</Button>
                     <Button size="sm" variant="outline" data-testid="message-btn" onClick={() => router.push(`/messages?u=${p.id}`)}><MessageSquare className="h-4 w-4" />Message</Button>
                   </>
                 )}
-                {me && (
+                {me && !me.is_guest && (
                   <>
                     <Button
                       size="sm"
@@ -156,7 +158,7 @@ export default function ProfilePage() {
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img src={mediaSrc(v.thumbnail_url)} alt={v.title} className="h-full w-full object-cover opacity-90 transition group-hover:opacity-100" />
               ) : (
-                <video src={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}${v.video_url}#t=0.5`} preload="metadata" muted className="h-full w-full object-cover opacity-90 transition group-hover:opacity-100" />
+                <video src={`${mediaSrc(v.video_url)}#t=0.5`} preload="metadata" muted className="h-full w-full object-cover opacity-90 transition group-hover:opacity-100" />
               )}
               {v.duration_seconds != null && (
                 <span className="absolute right-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-white">{formatTime(v.duration_seconds)}</span>

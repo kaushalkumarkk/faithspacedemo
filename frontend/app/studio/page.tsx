@@ -28,8 +28,8 @@ function Studio() {
     onSuccess: () => { toast.success("Saved — edits to published content are re-reviewed"); setEdit(null); refresh(); }, onError: (e) => toast.error((e as Error).message),
   });
 
-  const Row = ({ kind, id, title, subtitle, status, reason, created, link, thumbUrl, duration }: {
-    kind: "video" | "episode"; id: number; title: string; subtitle?: string; status: string; reason: string | null; created: string; link: string; thumbUrl?: string | null; duration?: number | null;
+  const Row = ({ kind, id, title, subtitle, status, reason, created, link, thumbUrl, duration, views }: {
+    kind: "video" | "episode"; id: number; title: string; subtitle?: string; status: string; reason: string | null; created: string; link: string; thumbUrl?: string | null; duration?: number | null; views?: number;
   }) => {
     const item = (kind === "video" ? videos.data?.find((v) => v.id === id) : episodes.data?.find((e) => e.id === id))!;
     return (
@@ -45,6 +45,7 @@ function Studio() {
           <p className="text-xs text-muted">
             {subtitle ? `${subtitle} · ` : ""}
             {duration != null ? `${formatTime(duration)} · ` : ""}
+            {views != null ? <span data-testid="studio-views">{views} {views === 1 ? "view" : "views"} · </span> : null}
             Uploaded {formatDateTime(created)} · {timeAgo(created)}
           </p>
           {reason && <p className="mt-1 text-sm text-danger">Reason: {reason}</p>}
@@ -67,7 +68,7 @@ function Studio() {
       {active.isError && <ErrorState error={active.error} retry={() => active.refetch()} />}
       {active.data?.length === 0 && <EmptyState title={`No ${tab} yet`} action={<Link href="/upload"><Button size="sm">Upload one</Button></Link>} />}
       <div className="space-y-2">
-        {tab === "videos" && videos.data?.map((v) => <Row key={v.id} kind="video" id={v.id} title={v.title} status={v.status} reason={v.rejection_reason} created={v.created_at} link={`/?v=${v.id}`} thumbUrl={v.thumbnail_url} duration={v.duration_seconds} />)}
+        {tab === "videos" && videos.data?.map((v) => <Row key={v.id} kind="video" id={v.id} title={v.title} status={v.status} reason={v.rejection_reason} created={v.created_at} link={`/?v=${v.id}`} thumbUrl={v.thumbnail_url} duration={v.duration_seconds} views={v.view_count ?? 0} />)}
         {tab === "episodes" && episodes.data?.map((e) => <Row key={e.id} kind="episode" id={e.id} title={e.title} subtitle={e.podcast_title} status={e.status} reason={e.rejection_reason} created={e.created_at} link={`/episodes/${e.id}`} thumbUrl={e.cover_url} />)}
       </div>
       <Modal open={!!edit} onClose={() => setEdit(null)} title="Edit details">

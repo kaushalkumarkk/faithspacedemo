@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     JSON, BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint,
 )
+from sqlalchemy import false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -26,6 +27,7 @@ class User(Base):
     bio: Mapped[str] = mapped_column(Text, default="")
     role: Mapped[str] = mapped_column(String(16), default="viewer", index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_guest: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     avatar_asset_id: Mapped[int | None] = mapped_column(
         ForeignKey("media_assets.id", ondelete="SET NULL", use_alter=True, name="fk_user_avatar"), nullable=True
     )
@@ -63,6 +65,7 @@ class Video(Base):
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    view_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     owner = relationship("User", lazy="joined")
     asset = relationship("MediaAsset", foreign_keys=[asset_id], lazy="joined")
@@ -120,6 +123,15 @@ class Like(Base):
     video_id: Mapped[int] = mapped_column(ForeignKey("videos.id", ondelete="CASCADE"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     __table_args__ = (UniqueConstraint("user_id", "video_id", name="uq_like_user_video"),)
+
+
+class Bookmark(Base):
+    __tablename__ = "bookmarks"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    video_id: Mapped[int] = mapped_column(ForeignKey("videos.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    __table_args__ = (UniqueConstraint("user_id", "video_id", name="uq_bookmark_user_video"),)
 
 
 class Follow(Base):

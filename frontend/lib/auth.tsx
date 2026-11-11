@@ -8,6 +8,8 @@ interface AuthCtx {
   loading: boolean;
   login: (email: string, password: string) => Promise<User>;
   register: (b: { email: string; password: string; display_name: string; role: "viewer" | "creator" }) => Promise<User>;
+  guest: () => Promise<User>;
+  upgrade: (b: { email: string; password: string; display_name: string; role: "viewer" | "creator" }) => Promise<User>;
   logout: () => void;
   refresh: () => Promise<void>;
 }
@@ -40,6 +42,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user, loading, refresh,
         login: (email, password) => finish("/auth/login", { email, password }),
         register: (b) => finish("/auth/register", b),
+        guest: () => finish("/auth/guest", undefined),
+        upgrade: (b) => finish("/auth/upgrade", b),
         logout: () => { tokenStore.clear(); qc.clear(); setUser(null); },
       }}
     >

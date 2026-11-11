@@ -16,7 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/auth";
 
 export default function LoginScreen() {
-  const { login, register } = useAuth();
+  const { login, register, guest } = useAuth();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -38,6 +38,17 @@ export default function LoginScreen() {
       }
     } catch (e) {
       Alert.alert("Authentication failed", (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleGuest = async () => {
+    setBusy(true);
+    try {
+      await guest();
+    } catch (e) {
+      Alert.alert("Could not start a guest session", (e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -108,6 +119,9 @@ export default function LoginScreen() {
             <Pressable style={styles.primaryBtn} onPress={handleSubmit} disabled={busy}>
               {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>{mode === "login" ? "Sign in" : "Register"}</Text>}
             </Pressable>
+            <Pressable style={styles.secondaryBtn} onPress={handleGuest} disabled={busy}>
+              <Text style={styles.secondaryBtnText}>Continue as guest</Text>
+            </Pressable>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -136,5 +150,7 @@ const styles = StyleSheet.create({
   roleText: { color: "#9c9aa8", textTransform: "capitalize", fontWeight: "600" },
   roleTextActive: { color: "#fff" },
   primaryBtn: { backgroundColor: "#7c5cff", borderRadius: 12, paddingVertical: 13, alignItems: "center", marginTop: 4 },
+  secondaryBtn: { borderRadius: 12, paddingVertical: 12, alignItems: "center", borderWidth: 1, borderColor: "#2f2d42" },
+  secondaryBtnText: { color: "#c9c8d4", fontWeight: "600", fontSize: 14 },
   primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
 });

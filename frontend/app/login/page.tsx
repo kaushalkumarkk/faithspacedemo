@@ -1,6 +1,7 @@
 "use client";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -19,7 +20,8 @@ const DEMOS = [
 ];
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, guest } = useAuth();
+  const router = useRouter();
   const { register, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<Form>({ resolver: zodResolver(schema) });
 
   // Redirect after login is handled by the app shell (role-based).
@@ -43,6 +45,10 @@ export default function LoginPage() {
         <Field label="Password" error={errors.password?.message}><Input type="password" autoComplete="current-password" placeholder="••••••••" className="h-11" {...register("password")} /></Field>
         <Button type="submit" size="lg" className="w-full" loading={isSubmitting}>Log in</Button>
       </form>
+      <Button type="button" variant="outline" size="lg" className="w-full" data-testid="guest-login" disabled={isSubmitting}
+        onClick={async () => { try { await guest(); toast.success("Browsing as a guest"); router.replace("/"); } catch (e) { toast.error((e as Error).message); } }}>
+        Continue as guest
+      </Button>
       <p className="text-center text-sm text-muted">New here? <Link href="/register" className="font-medium text-brand">Create an account</Link></p>
 
       <div className="rounded-2xl border border-line bg-surface p-4">

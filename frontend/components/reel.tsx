@@ -1,6 +1,6 @@
 "use client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Ban, Flag, Heart, Loader2, Maximize, MessageCircle, Play, Volume2, VolumeX } from "lucide-react";
+import { AlertTriangle, Ban, Bookmark, Eye, Flag, Heart, Loader2, Maximize, MessageCircle, Play, Volume2, VolumeX } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -41,11 +41,30 @@ export function Reel({ video, active, muted, setMuted, onComments, commentsOpen 
     else { el.pause(); }
   }, [active, failed]);
 
+  // Count one view per reel mount, once it actually starts playing (the server also throttles per viewer).
+  const counted = useRef(false);
+  useEffect(() => {
+    if (active && playing && !counted.current && video.status === "approved") {
+      counted.current = true;
+      api(`/videos/${video.id}/view`, { method: "POST" }).catch(() => {});
+    }
+  }, [active, playing, video.id, video.status]);
+
   const toggle = () => { const el = vref.current; if (!el) return; el.paused ? el.play().catch(() => {}) : el.pause(); };
 
   const like = useMutation({
     mutationFn: () => api(`/videos/${video.id}/likes`, { method: video.liked_by_me ? "DELETE" : "POST" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["feed"] }),
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const saveVideo = useMutation({
+    mutationFn: () => api(`/videos/${video.id}/save`, { method: video.saved_by_me ? "DELETE" : "POST" }),
+    onSuccess: () => {
+      toast.success(video.saved_by_me ? "Removed from saved" : "Saved to your list");
+      qc.invalidateQueries({ queryKey: ["feed"] });
+      qc.invalidateQueries({ queryKey: ["video"] });
+      qc.invalidateQueries({ queryKey: ["saved"] });
+    },
     onError: (e) => toast.error((e as Error).message),
   });
   const submitReport = useMutation({
@@ -100,6 +119,10 @@ export function Reel({ video, active, muted, setMuted, onComments, commentsOpen 
           <span className={cn("grid h-11 w-11 place-items-center rounded-full bg-black/45 backdrop-blur", commentsOpen && "bg-brand")}><MessageCircle className="h-6 w-6" /></span>
           <span className="text-xs font-medium" data-testid="comment-count">{video.comment_count}</span>
         </button>
+        <button aria-label={video.saved_by_me ? "Remove from saved" : "Save video"} aria-pressed={!!video.saved_by_me} data-testid="save-btn" onClick={needAuth(() => saveVideo.mutate())} className="flex flex-col items-center gap-1">
+          <span className="grid h-11 w-11 place-items-center rounded-full bg-black/45 backdrop-blur"><Bookmark className={cn("h-6 w-6", video.saved_by_me && "fill-accent text-accent")} /></span>
+          <span className="text-xs font-medium">{video.saved_by_me ? "Saved" : "Save"}</span>
+        </button>
         <button aria-label={muted ? "Unmute" : "Mute"} onClick={() => setMuted(!muted)} className="grid h-11 w-11 place-items-center rounded-full bg-black/45 backdrop-blur">
           {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
         </button>
@@ -118,6 +141,7 @@ export function Reel({ video, active, muted, setMuted, onComments, commentsOpen 
         {video.description && <p className="mt-1 line-clamp-2 text-sm text-white/80">{video.description}</p>}
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
           <span className="rounded-full bg-white/15 px-2 py-0.5">{video.category}</span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 tabular-nums" data-testid="reel-views"><Eye className="h-3 w-3" aria-hidden />{video.view_count ?? 0} {video.view_count === 1 ? "view" : "views"}</span>
           {video.duration_seconds != null && (
             <span className="rounded-full bg-white/15 px-2 py-0.5 tabular-nums" data-testid="reel-duration">{formatTime(video.duration_seconds)}</span>
           )}

@@ -196,5 +196,5 @@ function Inbox() {
 }
 
 export default function MessagesPage() {
-  return <Gate><Suspense fallback={<Skeleton className="h-96" />}><Inbox /></Suspense></Gate>;
+  return <Gate members><Suspense fallback={<Skeleton className="h-96" />}><Inbox /></Suspense></Gate>;
 }

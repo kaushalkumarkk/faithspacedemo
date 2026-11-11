@@ -44,6 +44,7 @@ class UserOut(BaseModel):
     bio: str
     role: str
     is_active: bool = True
+    is_guest: bool = False
     avatar_url: str | None = None
     follower_count: int = 0
     following_count: int = 0
@@ -127,6 +128,8 @@ class VideoOut(BaseModel):
     like_count: int
     comment_count: int
     liked_by_me: bool
+    saved_by_me: bool = False
+    view_count: int = 0
     created_at: datetime
     published_at: datetime | None
 

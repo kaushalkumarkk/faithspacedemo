@@ -50,11 +50,49 @@ function VideoUpload() {
   const [customThumb, setCustomThumb] = useState(false);
   const [durationSec, setDurationSec] = useState<number | null>(null);
   const [pct, setPct] = useState(0);
-  const [phase, setPhase] = useState<"idle" | "uploading" | "thumbnail" | "saving" | "done">("idle");
+  const [phase, setPhase] = useState<"idle" | "saving" | "done">("idle");
+  // The video uploads in the background the moment it is chosen, so the form can be filled in while the bytes move.
+  const [bg, setBg] = useState<"idle" | "uploading" | "ready" | "error">("idle");
   const [err, setErr] = useState<string | null>(null);
   const [assetId, setAssetId] = useState<number | null>(null);
   const [thumbAssetId, setThumbAssetId] = useState<number | null>(null);
-  const cancelRef = useRef<(() => void) | null>(null);
+  const videoUp = useRef<{ cancel: () => void; promise: Promise<number> } | null>(null);
+  const thumbUp = useRef<{ cancel: () => void; promise: Promise<number> } | null>(null);
+
+  const startVideoUpload = (f: File) => {
+    videoUp.current?.cancel();
+    setPct(0); setBg("uploading"); setAssetId(null); setErr(null);
+    const up = uploadFile("video", f, f.name, setPct);
+    const rec = { cancel: up.cancel, promise: up.promise.then((a) => a.id) };
+    videoUp.current = rec;
+    rec.promise.then((id) => { if (videoUp.current === rec) { setAssetId(id); setBg("ready"); } }).catch((e: ApiError) => {
+      if (videoUp.current !== rec) return;
+      videoUp.current = null;
+      if (e.code === "aborted") return setBg("idle");
+      setBg("error"); setErr(e.message); toast.error(e.message);
+    });
+  };
+
+  const startThumbUpload = (blob: Blob, name: string) => {
+    thumbUp.current?.cancel();
+    const up = uploadFile("image", blob, name, () => {});
+    const rec = { cancel: up.cancel, promise: up.promise.then((a) => a.id) };
+    thumbUp.current = rec;
+    rec.promise.then((id) => { if (thumbUp.current === rec) setThumbAssetId(id); }).catch(() => { if (thumbUp.current === rec) thumbUp.current = null; });
+  };
+
+  // Upload each new thumbnail right away as well (it is small), and stop everything if the page is left.
+  useEffect(() => {
+    if (!thumbBlob) { thumbUp.current?.cancel(); thumbUp.current = null; return; }
+    startThumbUpload(thumbBlob, thumbName);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thumbBlob, thumbName]);
+  useEffect(() => () => { videoUp.current?.cancel(); thumbUp.current?.cancel(); }, []);
+
+  const removeFile = () => {
+    videoUp.current?.cancel(); videoUp.current = null;
+    setFile(null); setAssetId(null); setThumbAssetId(null); setBg("idle"); setPct(0);
+  };
   const previewVideoRef = useRef<HTMLVideoElement>(null);
   const { register, handleSubmit, reset, formState: { errors } } = useForm<VideoForm>({ resolver: zodResolver(videoSchema), defaultValues: { category: "" } });
 
@@ -103,6 +141,7 @@ function VideoUpload() {
     setCustomThumb(false); setThumbError(null); setThumbBlob(null); setThumbUrl(null);
     setDurationSec(recordedDuration && recordedDuration > 0 ? recordedDuration : null);
     setFile(e ? null : f);
+    if (e) { videoUp.current?.cancel(); videoUp.current = null; setBg("idle"); } else startVideoUpload(f);
   };
 
   const pickThumbnail = (f: File | null) => {
@@ -122,23 +161,15 @@ function VideoUpload() {
   const submit = async (v: VideoForm) => {
     if (!file) return setFileError("Choose or record a video first.");
     setErr(null);
+    setPhase("saving");
     try {
-      let id = assetId;
-      if (id === null) {
-        setPhase("uploading"); setPct(0);
-        const up = uploadFile("video", file, file.name, setPct);
-        cancelRef.current = up.cancel;
-        id = (await up.promise).id;
-        setAssetId(id);
+      if (!videoUp.current) startVideoUpload(file); // first attempt failed or was cancelled: try again
+      const id = await videoUp.current!.promise;
+      let tid: number | null = null;
+      if (thumbBlob) {
+        if (!thumbUp.current) startThumbUpload(thumbBlob, thumbName);
+        tid = await thumbUp.current!.promise;
       }
-      let tid = thumbAssetId;
-      if (tid === null && thumbBlob) {
-        setPhase("thumbnail");
-        const tup = uploadFile("image", thumbBlob, thumbName, () => {});
-        tid = (await tup.promise).id;
-        setThumbAssetId(tid);
-      }
-      setPhase("saving");
       await api("/videos", {
         method: "POST",
         json: {
@@ -169,12 +200,12 @@ function VideoUpload() {
         <p className="text-sm text-muted">Your video and thumbnail are stored and <b>pending</b>. It will appear in the public feed only after an admin approves it.</p>
         <div className="flex justify-center gap-2">
           <Link href="/studio"><Button>View in my studio</Button></Link>
-          <Button variant="outline" onClick={() => { setFile(null); setAssetId(null); setThumbAssetId(null); setThumbBlob(null); setThumbUrl(null); setDurationSec(null); setPhase("idle"); reset(); }}>Upload another</Button>
+          <Button variant="outline" onClick={() => { removeFile(); setThumbBlob(null); setThumbUrl(null); setDurationSec(null); setPhase("idle"); reset(); }}>Upload another</Button>
         </div>
       </Card>
     );
 
-  const busy = phase === "uploading" || phase === "thumbnail" || phase === "saving";
+  const busy = phase === "saving";
   return (
     <form onSubmit={handleSubmit(submit)} className="grid gap-6 lg:grid-cols-2" noValidate>
       <div className="space-y-3">
@@ -215,7 +246,7 @@ function VideoUpload() {
                   {durationSec !== null && <span data-testid="selected-duration"> · {formatTime(durationSec)}</span>}
                 </p>
               </div>
-              {!busy && <Button type="button" variant="ghost" size="icon" aria-label="Remove file" onClick={() => { setFile(null); setAssetId(null); setThumbAssetId(null); }}><X className="h-4 w-4" /></Button>}
+              {!busy && <Button type="button" variant="ghost" size="icon" aria-label="Remove file" onClick={removeFile}><X className="h-4 w-4" /></Button>}
             </div>
 
             <div className="rounded-xl border border-line bg-surface p-3 text-sm space-y-2">
@@ -242,13 +273,13 @@ function VideoUpload() {
         <Field label="Category" error={errors.category?.message}>
           <Select {...register("category")} disabled={busy}><option value="">Select…</option>{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</Select>
         </Field>
-        {phase === "uploading" && <ProgressBar pct={pct} label="Uploading video" />}
-        {phase === "thumbnail" && <p className="text-sm text-muted">Uploading thumbnail…</p>}
-        {phase === "saving" && <p className="text-sm text-muted">Saving…</p>}
+        {bg === "uploading" && <ProgressBar pct={pct} label={busy ? "Finishing upload" : "Uploading in the background — fill in the details meanwhile"} />}
+        {bg === "ready" && file && <p className="flex items-center gap-1.5 text-sm text-success" data-testid="video-ready"><CheckCircle2 className="h-4 w-4" />Video uploaded ({formatBytes(file.size)}). Add details and submit.</p>}
+        {phase === "saving" && bg !== "uploading" && <p className="text-sm text-muted">Saving…</p>}
         {err && <p role="alert" className="rounded-lg bg-danger/10 p-2 text-sm text-danger" data-testid="upload-error">{err}</p>}
         <div className="flex gap-2">
-          <Button type="submit" className="flex-1" loading={busy} disabled={!file} data-testid="submit-video">{assetId && err ? "Retry submit" : "Upload & submit for moderation"}</Button>
-          {phase === "uploading" && <Button type="button" variant="outline" onClick={() => cancelRef.current?.()} data-testid="cancel-upload">Cancel</Button>}
+          <Button type="submit" className="flex-1" loading={busy} disabled={!file} data-testid="submit-video">{bg === "uploading" ? "Submit when upload finishes" : "Submit for moderation"}</Button>
+          {bg === "uploading" && <Button type="button" variant="outline" onClick={removeFile} data-testid="cancel-upload">Cancel</Button>}
         </div>
         <p className="text-xs text-muted">Videos are reviewed by a moderator before they are published.</p>
       </Card>

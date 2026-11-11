@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from .. import schemas as s
 from ..config import settings
 from ..db import get_db
-from ..deps import current_user, err
+from ..deps import err, member_user
 from ..models import Message, User
 from ..security import limiter
 from ..services import is_blocked_between, user_out
@@ -20,13 +20,13 @@ def _out(m: Message) -> s.MessageOut:
 
 
 @router.get("/unread-count")
-def unread_count(user: User = Depends(current_user), db: Session = Depends(get_db)):
+def unread_count(user: User = Depends(member_user), db: Session = Depends(get_db)):
     n = db.scalar(select(func.count()).select_from(Message).where(Message.recipient_id == user.id, Message.read_at.is_(None)))
     return {"count": n or 0}
 
 
 @router.get("/conversations", response_model=list[s.ConversationOut])
-def conversations(user: User = Depends(current_user), db: Session = Depends(get_db)):
+def conversations(user: User = Depends(member_user), db: Session = Depends(get_db)):
     """One row per person you have exchanged messages with, newest first."""
     rows = db.scalars(
         select(Message).where(or_(Message.sender_id == user.id, Message.recipient_id == user.id)).order_by(Message.id.desc())
@@ -48,7 +48,7 @@ def conversations(user: User = Depends(current_user), db: Session = Depends(get_
 
 
 @router.get("/with/{other_id}", response_model=list[s.MessageOut])
-def thread(other_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def thread(other_id: int, user: User = Depends(member_user), db: Session = Depends(get_db)):
     """Last 200 messages with another user (oldest first). Opening the thread marks their messages as read."""
     if not db.get(User, other_id):
         raise err(404, "not_found", "User not found.")
@@ -62,7 +62,7 @@ def thread(other_id: int, user: User = Depends(current_user), db: Session = Depe
 
 
 @router.post("/with/{other_id}", response_model=s.MessageOut, status_code=201)
-def send(other_id: int, body: s.MessageCreate, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def send(other_id: int, body: s.MessageCreate, user: User = Depends(member_user), db: Session = Depends(get_db)):
     if other_id == user.id:
         raise err(400, "self_message", "You cannot message yourself.")
     other = db.get(User, other_id)
