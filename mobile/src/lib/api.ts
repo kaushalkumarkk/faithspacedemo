@@ -231,6 +231,15 @@ export interface Conversation {
   unread_count: number;
 }
 
+export interface AppNotification {
+  id: number;
+  type: string;
+  message: string;
+  link: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
 export interface Page<T> {
   items: T[];
   total: number;

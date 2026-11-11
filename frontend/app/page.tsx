@@ -87,7 +87,8 @@ function Feed() {
         {feed.isFetchingNextPage && <p className="py-4 text-center text-sm text-muted">Loading more…</p>}
       </div>
 
-      <div className="pointer-events-none absolute left-4 top-3 z-10 rounded-full bg-black/55 px-2.5 py-1 text-xs font-medium text-white backdrop-blur" data-testid="feed-counter">
+      {/* Not shown on screen; kept for screen readers and the scroll e2e test. */}
+      <div className="sr-only" aria-live="polite" data-testid="feed-counter">
         {active + 1} / {Math.max(totalCount, videos.length)}
       </div>
 

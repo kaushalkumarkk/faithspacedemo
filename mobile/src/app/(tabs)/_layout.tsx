@@ -10,14 +10,21 @@ export default function TabsLayout() {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const [unreadMsgs, setUnreadMsgs] = useState(0);
+  const [unreadAlerts, setUnreadAlerts] = useState(0);
 
   useEffect(() => {
-    if (!user || user.is_guest) {
+    if (!user) {
       setUnreadMsgs(0);
+      setUnreadAlerts(0);
       return;
     }
     let alive = true;
     const poll = async () => {
+      try {
+        const alerts = await api<{ count: number }>("/notifications/unread-count");
+        if (alive) setUnreadAlerts(alerts.count);
+      } catch {}
+      if (user.is_guest) return; // guests have no messages
       try {
         const res = await api<{ count: number }>("/messages/unread-count");
         if (alive) setUnreadMsgs(res.count);
@@ -80,6 +87,17 @@ export default function TabsLayout() {
           tabBarBadgeStyle: { backgroundColor: Theme.danger, color: "#fff", fontSize: 10 },
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? "chatbubbles" : "chatbubbles-outline"} size={size} color={color as string} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          title: "Alerts",
+          tabBarBadge: unreadAlerts > 0 ? (unreadAlerts > 9 ? "9+" : unreadAlerts) : undefined,
+          tabBarBadgeStyle: { backgroundColor: Theme.danger, color: "#fff", fontSize: 10 },
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? "notifications" : "notifications-outline"} size={size} color={color as string} />
           ),
         }}
       />

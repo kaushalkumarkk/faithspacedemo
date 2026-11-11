@@ -497,16 +497,10 @@ export default function WatchScreen() {
         />
       )}
 
-      {/* Top overlay: counter + ConnectSphere badge + category chips */}
+      {/* Top overlay: ConnectSphere badge + category chips */}
       <View style={[styles.topOverlay, { top: Math.max(insets.top + 6, 12) }]} pointerEvents="box-none">
         <View style={styles.topRow} pointerEvents="box-none">
-          {videos.length > 0 ? (
-            <View style={styles.counterPill}>
-              <Text style={styles.counterText}>
-                {activeIdx + 1} / {Math.max(total, videos.length)}
-              </Text>
-            </View>
-          ) : <View />}
+          <View />
           <View style={styles.brandPill}>
             <Image source={require("@/assets/images/logo.png")} style={styles.brandLogo} contentFit="cover" />
             <Text style={styles.brandText}>ConnectSphere</Text>
