@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { Theme } from "@/lib/theme";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -31,14 +32,21 @@ function RootNavigator() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: "#0d0c12", alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator size="large" color="#7c5cff" />
+      <View style={{ flex: 1, backgroundColor: Theme.bg, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator size="large" color={Theme.brand} />
       </View>
     );
   }
 
   return (
-    <Stack screenOptions={{ headerStyle: { backgroundColor: "#14131c" }, headerTintColor: "#fff" }}>
+    <Stack
+      screenOptions={{
+        headerStyle: { backgroundColor: Theme.surface },
+        headerTintColor: Theme.text,
+        headerShadowVisible: false,
+        contentStyle: { backgroundColor: Theme.bg },
+      }}
+    >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="chat/[id]" options={{ title: "Chat" }} />

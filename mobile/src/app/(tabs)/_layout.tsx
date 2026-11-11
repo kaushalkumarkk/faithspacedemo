@@ -3,13 +3,17 @@ import { Tabs } from "expo-router";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { Theme } from "@/lib/theme";
 
 export default function TabsLayout() {
   const { user } = useAuth();
   const [unreadMsgs, setUnreadMsgs] = useState(0);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || user.is_guest) {
+      setUnreadMsgs(0);
+      return;
+    }
     let alive = true;
     const poll = async () => {
       try {
@@ -28,11 +32,19 @@ export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerStyle: { backgroundColor: "#14131c" },
-        headerTintColor: "#fff",
-        tabBarStyle: { backgroundColor: "#14131c", borderTopColor: "#282638" },
-        tabBarActiveTintColor: "#7c5cff",
-        tabBarInactiveTintColor: "#8f8da0",
+        headerStyle: { backgroundColor: Theme.surface },
+        headerTintColor: Theme.text,
+        headerShadowVisible: false,
+        tabBarStyle: {
+          backgroundColor: Theme.surface,
+          borderTopColor: Theme.border,
+          height: 60,
+          paddingBottom: 6,
+          paddingTop: 4,
+        },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
+        tabBarActiveTintColor: Theme.brand,
+        tabBarInactiveTintColor: Theme.textMuted,
       }}
     >
       <Tabs.Screen
@@ -40,23 +52,31 @@ export default function TabsLayout() {
         options={{
           title: "Watch",
           headerShown: false,
-          tabBarIcon: ({ color, size }) => <Ionicons name="play-circle" size={size} color={color as string} />,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? "play-circle" : "play-circle-outline"} size={size} color={color as string} />
+          ),
         }}
       />
       <Tabs.Screen
         name="upload"
         options={{
-          title: "Upload",
+          title: "Create",
           href: user && user.role !== "viewer" ? "/(tabs)/upload" : null,
-          tabBarIcon: ({ color, size }) => <Ionicons name="add-circle" size={size} color={color as string} />,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? "add-circle" : "add-circle-outline"} size={size} color={color as string} />
+          ),
         }}
       />
       <Tabs.Screen
         name="messages"
         options={{
           title: "Messages",
+          href: user && !user.is_guest ? "/(tabs)/messages" : null,
           tabBarBadge: unreadMsgs > 0 ? unreadMsgs : undefined,
-          tabBarIcon: ({ color, size }) => <Ionicons name="chatbubbles" size={size} color={color as string} />,
+          tabBarBadgeStyle: { backgroundColor: Theme.danger, color: "#fff", fontSize: 10 },
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? "chatbubbles" : "chatbubbles-outline"} size={size} color={color as string} />
+          ),
         }}
       />
       <Tabs.Screen
@@ -64,14 +84,18 @@ export default function TabsLayout() {
         options={{
           title: "Admin",
           href: user?.role === "admin" ? "/(tabs)/admin" : null,
-          tabBarIcon: ({ color, size }) => <Ionicons name="shield-checkmark" size={size} color={color as string} />,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? "shield-checkmark" : "shield-checkmark-outline"} size={size} color={color as string} />
+          ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: "Profile",
-          tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color as string} />,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? "person" : "person-outline"} size={size} color={color as string} />
+          ),
         }}
       />
     </Tabs>

@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useEventListener } from "expo";
 import { Image } from "expo-image";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
@@ -8,7 +9,9 @@ import {
   Alert,
   Dimensions,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -16,8 +19,11 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { api, formatTime, mediaSrc, type Comment, type Page, type Video } from "@/lib/api";
+import { api, formatTime, mediaSrc, timeAgo, type Comment, type Page, type Video } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { Theme } from "@/lib/theme";
+
+const REPORT_REASONS = ["Inappropriate content", "Spam or misleading", "Harassment or hate", "Audio / video issue"];
 
 function ReelItem({
   item,
@@ -26,6 +32,7 @@ function ReelItem({
   muted,
   onToggleMute,
   onLike,
+  onSave,
   onOpenComments,
   onOpenReport,
   onOpenProfile,
@@ -36,6 +43,7 @@ function ReelItem({
   muted: boolean;
   onToggleMute: () => void;
   onLike: (v: Video) => void;
+  onSave: (v: Video) => void;
   onOpenComments: (v: Video) => void;
   onOpenReport: (v: Video) => void;
   onOpenProfile: (userId: number) => void;
@@ -43,10 +51,18 @@ function ReelItem({
   const src = mediaSrc(item.video_url, item.status) ?? null;
   const thumb = mediaSrc(item.thumbnail_url, item.status);
   const [pausedByUser, setPausedByUser] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const viewRecorded = useRef(false);
 
   const player = useVideoPlayer(src, (p) => {
     p.loop = true;
     p.muted = muted;
+    p.timeUpdateEventInterval = 0.35;
+  });
+
+  useEventListener(player, "timeUpdate", ({ currentTime }) => {
+    const dur = player.duration || item.duration_seconds || 0;
+    if (dur > 0) setProgress(Math.min(1, currentTime / dur));
   });
 
   useEffect(() => {
@@ -56,10 +72,14 @@ function ReelItem({
   useEffect(() => {
     if (isActive && !pausedByUser) {
       player.play();
+      if (!viewRecorded.current && item.status === "approved") {
+        viewRecorded.current = true;
+        api(`/videos/${item.id}/view`, { method: "POST" }).catch(() => {});
+      }
     } else {
       player.pause();
     }
-  }, [player, isActive, pausedByUser]);
+  }, [player, isActive, pausedByUser, item.id, item.status]);
 
   const togglePlay = () => {
     if (player.playing) {
@@ -78,30 +98,51 @@ function ReelItem({
       <Pressable style={StyleSheet.absoluteFill} onPress={togglePlay}>
         {pausedByUser && (
           <View style={styles.pauseOverlay}>
-            <Ionicons name="play" size={54} color="rgba(255,255,255,0.88)" />
+            <View style={styles.playCircle}>
+              <Ionicons name="play" size={42} color="#fff" style={{ marginLeft: 4 }} />
+            </View>
           </View>
         )}
       </Pressable>
 
+      {/* Subtle layered bottom scrim for crisp caption readability */}
+      <View pointerEvents="none" style={styles.scrimTop} />
+      <View pointerEvents="none" style={styles.scrimBottom} />
+
       {/* Right action rail */}
       <View style={styles.rail}>
         <Pressable style={styles.railBtn} onPress={() => onLike(item)}>
-          <Ionicons name={item.liked_by_me ? "heart" : "heart-outline"} size={30} color={item.liked_by_me ? "#ff4757" : "#fff"} />
+          <View style={[styles.railIconCircle, item.liked_by_me && styles.railIconLiked]}>
+            <Ionicons name={item.liked_by_me ? "heart" : "heart-outline"} size={24} color={item.liked_by_me ? "#ff4757" : "#fff"} />
+          </View>
           <Text style={styles.railText}>{item.like_count}</Text>
         </Pressable>
 
         <Pressable style={styles.railBtn} onPress={() => onOpenComments(item)}>
-          <Ionicons name="chatbubble-ellipses" size={28} color="#fff" />
+          <View style={styles.railIconCircle}>
+            <Ionicons name="chatbubble-ellipses-outline" size={23} color="#fff" />
+          </View>
           <Text style={styles.railText}>{item.comment_count}</Text>
         </Pressable>
 
+        <Pressable style={styles.railBtn} onPress={() => onSave(item)}>
+          <View style={[styles.railIconCircle, item.saved_by_me && styles.railIconSaved]}>
+            <Ionicons name={item.saved_by_me ? "bookmark" : "bookmark-outline"} size={22} color={item.saved_by_me ? Theme.accent : "#fff"} />
+          </View>
+          <Text style={styles.railText}>{item.saved_by_me ? "Saved" : "Save"}</Text>
+        </Pressable>
+
         <Pressable style={styles.railBtn} onPress={onToggleMute}>
-          <Ionicons name={muted ? "volume-mute" : "volume-high"} size={26} color="#fff" />
+          <View style={styles.railIconCircle}>
+            <Ionicons name={muted ? "volume-mute" : "volume-high"} size={22} color="#fff" />
+          </View>
           <Text style={styles.railText}>{muted ? "Muted" : "Sound"}</Text>
         </Pressable>
 
         <Pressable style={styles.railBtn} onPress={() => onOpenReport(item)}>
-          <Ionicons name="flag" size={24} color="#fff" />
+          <View style={styles.railIconCircle}>
+            <Ionicons name="flag-outline" size={20} color="#fff" />
+          </View>
           <Text style={styles.railText}>Report</Text>
         </Pressable>
       </View>
@@ -113,6 +154,9 @@ function ReelItem({
             <Text style={styles.avatarText}>{item.owner.display_name.slice(0, 1).toUpperCase()}</Text>
           </View>
           <Text style={styles.ownerName}>{item.owner.display_name}</Text>
+          <View style={styles.followPill}>
+            <Text style={styles.followPillText}>View profile</Text>
+          </View>
         </Pressable>
         <Text style={styles.videoTitle}>{item.title}</Text>
         {!!item.description && (
@@ -121,9 +165,25 @@ function ReelItem({
           </Text>
         )}
         <View style={styles.badges}>
-          <Text style={styles.badge}>{item.category}</Text>
-          {item.duration_seconds != null && <Text style={styles.badge}>{formatTime(item.duration_seconds)}</Text>}
+          <View style={styles.badgePill}>
+            <Text style={styles.badgeText}>{item.category}</Text>
+          </View>
+          <View style={styles.badgePill}>
+            <Ionicons name="eye-outline" size={11} color="#fff" />
+            <Text style={styles.badgeText}>{item.view_count ?? 0}</Text>
+          </View>
+          {item.duration_seconds != null && (
+            <View style={styles.badgePill}>
+              <Ionicons name="time-outline" size={11} color="#fff" />
+              <Text style={styles.badgeText}>{formatTime(item.duration_seconds)}</Text>
+            </View>
+          )}
         </View>
+      </View>
+
+      {/* Sleek playback progress track */}
+      <View style={styles.seekTrack}>
+        <View style={[styles.seekFill, { width: `${Math.round(progress * 100)}%` }]} />
       </View>
     </View>
   );
@@ -146,7 +206,7 @@ export default function WatchScreen() {
   const [commentsFor, setCommentsFor] = useState<Video | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState("");
-  const [reportVideo, setReportVideo] = useState<Video | null>(null);
+  const [reportTarget, setReportTarget] = useState<{ type: "video" | "comment"; id: number; title: string; ownerId?: number; ownerName?: string } | null>(null);
   const [reportReason, setReportReason] = useState("");
 
   useFocusEffect(
@@ -207,6 +267,19 @@ export default function WatchScreen() {
     }
   };
 
+  const handleSave = async (v: Video) => {
+    try {
+      const res = await api<{ saved: boolean }>(`/videos/${v.id}/save`, {
+        method: v.saved_by_me ? "DELETE" : "POST",
+      });
+      setVideos((prev) =>
+        prev.map((item) => (item.id === v.id ? { ...item, saved_by_me: res.saved } : item)),
+      );
+    } catch (e) {
+      Alert.alert("Error", (e as Error).message);
+    }
+  };
+
   const openComments = async (v: Video) => {
     setCommentsFor(v);
     try {
@@ -228,56 +301,29 @@ export default function WatchScreen() {
     }
   };
 
-  const reportComment = (c: Comment) => {
-    Alert.prompt?.(
-      "Report comment",
-      "Why are you reporting this comment?",
-      async (reason) => {
-        if (!reason || reason.trim().length < 3) return;
-        try {
-          await api("/reports", { method: "POST", json: { target_type: "comment", target_id: c.id, reason: reason.trim() } });
-          Alert.alert("Reported", "Comment sent to moderators.");
-        } catch (e) {
-          Alert.alert("Error", (e as Error).message);
-        }
-      },
-    ) ??
-      Alert.alert("Report comment", "Submit report as inappropriate comment?", [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Report",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await api("/reports", { method: "POST", json: { target_type: "comment", target_id: c.id, reason: "Reported from mobile app" } });
-              Alert.alert("Reported", "Comment sent to moderators.");
-            } catch (e) {
-              Alert.alert("Error", (e as Error).message);
-            }
-          },
-        },
-      ]);
-  };
-
-  const submitVideoReport = async () => {
-    if (!reportVideo || reportReason.trim().length < 3) return;
+  const submitReport = async () => {
+    if (!reportTarget || reportReason.trim().length < 3) return;
     try {
       await api("/reports", {
         method: "POST",
-        json: { target_type: "video", target_id: reportVideo.id, reason: reportReason.trim() },
+        json: { target_type: reportTarget.type, target_id: reportTarget.id, reason: reportReason.trim() },
       });
-      setReportVideo(null);
+      setReportTarget(null);
       setReportReason("");
-      Alert.alert("Reported", "Report sent to moderators.");
+      Alert.alert("Reported", "Thank you. Moderators will review this shortly.");
     } catch (e) {
       Alert.alert("Error", (e as Error).message);
     }
   };
 
   const blockCreator = async (creatorId: number, name: string) => {
+    if (user?.is_guest) {
+      Alert.alert("Account required", "Create an account to block creators.");
+      return;
+    }
     try {
       await api(`/users/${creatorId}/block`, { method: "POST" });
-      setReportVideo(null);
+      setReportTarget(null);
       setVideos((prev) => prev.filter((v) => v.owner.id !== creatorId));
       Alert.alert("Blocked", `${name} has been blocked and their videos are hidden.`);
       loadFeed(1, false);
@@ -296,13 +342,14 @@ export default function WatchScreen() {
     >
       {loading && videos.length === 0 ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#7c5cff" />
+          <ActivityIndicator size="large" color={Theme.brand} />
         </View>
       ) : videos.length === 0 ? (
         <View style={styles.center}>
+          <Ionicons name="film-outline" size={44} color={Theme.textMuted} />
           <Text style={styles.emptyTitle}>No published videos yet</Text>
           <Pressable style={styles.refreshBtn} onPress={() => loadFeed(1, false)}>
-            <Text style={styles.refreshText}>Refresh</Text>
+            <Text style={styles.refreshText}>Refresh feed</Text>
           </Pressable>
         </View>
       ) : (
@@ -338,10 +385,11 @@ export default function WatchScreen() {
                 muted={muted}
                 onToggleMute={() => setMuted((m) => !m)}
                 onLike={handleLike}
+                onSave={handleSave}
                 onOpenComments={openComments}
                 onOpenReport={(v) => {
                   setReportReason("");
-                  setReportVideo(v);
+                  setReportTarget({ type: "video", id: v.id, title: v.title, ownerId: v.owner.id, ownerName: v.owner.display_name });
                 }}
                 onOpenProfile={(uid) => router.push(`/user/${uid}`)}
               />
@@ -362,30 +410,42 @@ export default function WatchScreen() {
         <Text style={styles.brandText}>ConnectSphere</Text>
       </View>
 
-      {/* Comments modal */}
+      {/* Comments bottom sheet */}
       <Modal visible={!!commentsFor} animationType="slide" transparent onRequestClose={() => setCommentsFor(null)}>
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <View style={styles.modalSheet}>
+            <View style={styles.sheetHandle} />
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Comments</Text>
-              <Pressable onPress={() => setCommentsFor(null)}>
-                <Ionicons name="close" size={24} color="#fff" />
+              <Text style={styles.modalTitle}>Comments ({commentsFor?.comment_count ?? 0})</Text>
+              <Pressable onPress={() => setCommentsFor(null)} style={styles.closeBtn}>
+                <Ionicons name="close" size={20} color={Theme.text} />
               </Pressable>
             </View>
             <FlatList
               data={comments}
               keyExtractor={(c) => String(c.id)}
               style={{ flex: 1 }}
-              ListEmptyComponent={<Text style={styles.emptyModal}>No comments yet.</Text>}
+              ListEmptyComponent={<Text style={styles.emptyModal}>No comments yet. Start the conversation.</Text>}
               renderItem={({ item: c }) => (
                 <View style={styles.commentRow}>
+                  <View style={styles.commentAvatar}>
+                    <Text style={styles.commentAvatarText}>{c.author.display_name.slice(0, 1).toUpperCase()}</Text>
+                  </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.commentAuthor}>{c.author.display_name}</Text>
+                    <Text style={styles.commentAuthor}>
+                      {c.author.display_name} <Text style={styles.commentTime}>· {timeAgo(c.created_at)}</Text>
+                    </Text>
                     <Text style={styles.commentBody}>{c.body}</Text>
                   </View>
                   {user && user.id !== c.author.id && (
-                    <Pressable onPress={() => reportComment(c)} style={{ padding: 6 }}>
-                      <Ionicons name="flag-outline" size={16} color="#9c9aa8" />
+                    <Pressable
+                      onPress={() => {
+                        setReportReason("");
+                        setReportTarget({ type: "comment", id: c.id, title: c.body });
+                      }}
+                      style={{ padding: 6 }}
+                    >
+                      <Ionicons name="flag-outline" size={16} color={Theme.textMuted} />
                     </Pressable>
                   )}
                 </View>
@@ -395,7 +455,7 @@ export default function WatchScreen() {
               <TextInput
                 style={styles.composerInput}
                 placeholder="Add a comment..."
-                placeholderTextColor="#7c7b8a"
+                placeholderTextColor={Theme.textMuted}
                 value={commentText}
                 onChangeText={setCommentText}
               />
@@ -404,32 +464,45 @@ export default function WatchScreen() {
               </Pressable>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Report / Block modal */}
-      <Modal visible={!!reportVideo} animationType="fade" transparent onRequestClose={() => setReportVideo(null)}>
-        <View style={styles.modalBackdrop}>
+      <Modal visible={!!reportTarget} animationType="fade" transparent onRequestClose={() => setReportTarget(null)}>
+        <View style={styles.centerBackdrop}>
           <View style={styles.dialog}>
-            <Text style={styles.modalTitle}>Report or Block</Text>
+            <Text style={styles.modalTitle}>
+              {reportTarget?.type === "video" ? "Report or block" : "Report comment"}
+            </Text>
+            <View style={styles.chipWrap}>
+              {REPORT_REASONS.map((r) => (
+                <Pressable key={r} onPress={() => setReportReason(r)} style={[styles.reasonChip, reportReason === r && styles.reasonChipActive]}>
+                  <Text style={[styles.reasonChipText, reportReason === r && { color: Theme.text }]}>{r}</Text>
+                </Pressable>
+              ))}
+            </View>
             <TextInput
               style={styles.reasonInput}
               multiline
-              placeholder="What's wrong with this video?"
-              placeholderTextColor="#7c7b8a"
+              placeholder="Describe the issue..."
+              placeholderTextColor={Theme.textMuted}
               value={reportReason}
               onChangeText={setReportReason}
             />
             <View style={styles.dialogActions}>
-              {reportVideo && user && user.id !== reportVideo.owner.id && (
-                <Pressable style={styles.blockBtn} onPress={() => blockCreator(reportVideo.owner.id, reportVideo.owner.display_name)}>
-                  <Text style={styles.blockBtnText}>Block {reportVideo.owner.display_name}</Text>
+              {reportTarget?.type === "video" && reportTarget.ownerId && user && user.id !== reportTarget.ownerId && !user.is_guest && (
+                <Pressable style={styles.blockBtn} onPress={() => blockCreator(reportTarget.ownerId!, reportTarget.ownerName || "creator")}>
+                  <Text style={styles.blockBtnText}>Block {reportTarget.ownerName}</Text>
                 </Pressable>
               )}
-              <Pressable style={styles.cancelBtn} onPress={() => setReportVideo(null)}>
-                <Text style={{ color: "#ccc" }}>Cancel</Text>
+              <Pressable style={styles.cancelBtn} onPress={() => setReportTarget(null)}>
+                <Text style={{ color: Theme.textSecondary }}>Cancel</Text>
               </Pressable>
-              <Pressable style={styles.sendBtn} onPress={submitVideoReport}>
+              <Pressable
+                style={[styles.sendBtn, reportReason.trim().length < 3 && { opacity: 0.5 }]}
+                disabled={reportReason.trim().length < 3}
+                onPress={submitReport}
+              >
                 <Text style={{ color: "#fff", fontWeight: "700" }}>Send</Text>
               </Pressable>
             </View>
@@ -442,44 +515,65 @@ export default function WatchScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#000" },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
-  emptyTitle: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  refreshBtn: { backgroundColor: "#7c5cff", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10 },
+  center: { flex: 1, backgroundColor: Theme.bg, alignItems: "center", justifyContent: "center", gap: 12 },
+  emptyTitle: { color: Theme.text, fontSize: 16, fontWeight: "600" },
+  refreshBtn: { backgroundColor: Theme.brand, paddingHorizontal: 18, paddingVertical: 11, borderRadius: 12 },
   refreshText: { color: "#fff", fontWeight: "700" },
   reel: { width: "100%", backgroundColor: "#000", position: "relative" },
-  pauseOverlay: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.25)" },
-  counterPill: { position: "absolute", left: 16, backgroundColor: "rgba(0,0,0,0.6)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
+  pauseOverlay: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.28)" },
+  playCircle: { width: 74, height: 74, borderRadius: 37, backgroundColor: "rgba(18,20,31,0.75)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.22)" },
+  scrimTop: { position: "absolute", top: 0, left: 0, right: 0, height: 96, backgroundColor: "rgba(0,0,0,0.28)" },
+  scrimBottom: { position: "absolute", bottom: 0, left: 0, right: 0, height: 220, backgroundColor: "rgba(0,0,0,0.48)" },
+  counterPill: { position: "absolute", left: 16, backgroundColor: "rgba(12,14,22,0.72)", paddingHorizontal: 11, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: "rgba(255,255,255,0.14)" },
   counterText: { color: "#fff", fontSize: 12, fontWeight: "700" },
-  brandPill: { position: "absolute", right: 16, flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(0,0,0,0.6)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
+  brandPill: { position: "absolute", right: 16, flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(12,14,22,0.72)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1, borderColor: "rgba(255,255,255,0.14)" },
   brandLogo: { width: 18, height: 18, borderRadius: 5 },
   brandText: { color: "#fff", fontSize: 12, fontWeight: "700" },
-  rail: { position: "absolute", right: 12, bottom: 96, alignItems: "center", gap: 18 },
-  railBtn: { alignItems: "center", gap: 3 },
-  railText: { color: "#fff", fontSize: 11, fontWeight: "600" },
-  caption: { position: "absolute", left: 14, right: 76, bottom: 20, gap: 6 },
+  rail: { position: "absolute", right: 12, bottom: 32, alignItems: "center", gap: 14 },
+  railBtn: { alignItems: "center", gap: 4 },
+  railIconCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(12,14,22,0.62)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.14)" },
+  railIconLiked: { backgroundColor: "rgba(255,71,87,0.2)", borderColor: "rgba(255,71,87,0.5)" },
+  railIconSaved: { backgroundColor: Theme.accentSoft, borderColor: "rgba(34,211,238,0.5)" },
+  railText: { color: "#fff", fontSize: 11, fontWeight: "700" },
+  caption: { position: "absolute", left: 14, right: 78, bottom: 20, gap: 6 },
   ownerRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  avatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#7c5cff", alignItems: "center", justifyContent: "center" },
+  avatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: Theme.brand, alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.4)" },
   avatarText: { color: "#fff", fontWeight: "800" },
   ownerName: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  followPill: { backgroundColor: "rgba(255,255,255,0.16)", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  followPillText: { color: "#fff", fontSize: 10, fontWeight: "700" },
   videoTitle: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  videoDesc: { color: "rgba(255,255,255,0.82)", fontSize: 13 },
-  badges: { flexDirection: "row", gap: 8, marginTop: 2 },
-  badge: { color: "#fff", fontSize: 11, backgroundColor: "rgba(255,255,255,0.2)", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, overflow: "hidden" },
+  videoDesc: { color: "rgba(255,255,255,0.86)", fontSize: 13 },
+  badges: { flexDirection: "row", gap: 6, marginTop: 2, flexWrap: "wrap" },
+  badgePill: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(255,255,255,0.18)", paddingHorizontal: 9, paddingVertical: 4, borderRadius: 12 },
+  badgeText: { color: "#fff", fontSize: 11, fontWeight: "600" },
+  seekTrack: { position: "absolute", left: 0, right: 0, bottom: 0, height: 3, backgroundColor: "rgba(255,255,255,0.22)" },
+  seekFill: { height: 3, backgroundColor: Theme.accent },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.65)", justifyContent: "flex-end" },
-  modalSheet: { backgroundColor: "#171622", height: "65%", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16 },
+  centerBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", padding: 20 },
+  modalSheet: { backgroundColor: Theme.surface, height: "68%", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 16, borderTopWidth: 1, borderColor: Theme.border },
+  sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: Theme.borderStrong, alignSelf: "center", marginBottom: 10 },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  modalTitle: { color: "#fff", fontSize: 17, fontWeight: "700" },
-  emptyModal: { color: "#8f8da0", textAlign: "center", marginTop: 32 },
-  commentRow: { flexDirection: "row", alignItems: "flex-start", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#262436" },
-  commentAuthor: { color: "#fff", fontWeight: "700", fontSize: 13 },
-  commentBody: { color: "#d5d4df", fontSize: 14, marginTop: 2 },
+  modalTitle: { color: Theme.text, fontSize: 17, fontWeight: "700" },
+  closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: Theme.surfaceElevated, alignItems: "center", justifyContent: "center" },
+  emptyModal: { color: Theme.textMuted, textAlign: "center", marginTop: 32 },
+  commentRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Theme.border },
+  commentAvatar: { width: 30, height: 30, borderRadius: 15, backgroundColor: Theme.surfaceElevated, alignItems: "center", justifyContent: "center" },
+  commentAvatarText: { color: Theme.text, fontWeight: "700", fontSize: 12 },
+  commentAuthor: { color: Theme.text, fontWeight: "700", fontSize: 13 },
+  commentTime: { color: Theme.textMuted, fontWeight: "400", fontSize: 11 },
+  commentBody: { color: Theme.textSecondary, fontSize: 14, marginTop: 2 },
   composerRow: { flexDirection: "row", gap: 8, paddingTop: 10 },
-  composerInput: { flex: 1, backgroundColor: "#0d0c12", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, color: "#fff", borderWidth: 1, borderColor: "#2f2d42" },
-  sendBtn: { backgroundColor: "#7c5cff", borderRadius: 12, paddingHorizontal: 14, justifyContent: "center", alignItems: "center" },
-  dialog: { margin: 20, marginBottom: "auto", marginTop: "auto", backgroundColor: "#171622", borderRadius: 16, padding: 16, gap: 12, borderWidth: 1, borderColor: "#2f2d42" },
-  reasonInput: { backgroundColor: "#0d0c12", borderRadius: 10, padding: 12, color: "#fff", minHeight: 80, textAlignVertical: "top", borderWidth: 1, borderColor: "#2f2d42" },
-  dialogActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" },
-  blockBtn: { backgroundColor: "#3a1b24", paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, marginRight: "auto" },
-  blockBtnText: { color: "#ff6b81", fontWeight: "700", fontSize: 12 },
+  composerInput: { flex: 1, backgroundColor: Theme.bg, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, color: Theme.text, borderWidth: 1, borderColor: Theme.border },
+  sendBtn: { backgroundColor: Theme.brand, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, justifyContent: "center", alignItems: "center" },
+  dialog: { backgroundColor: Theme.surface, borderRadius: 20, padding: 18, gap: 12, borderWidth: 1, borderColor: Theme.border },
+  chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  reasonChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, backgroundColor: Theme.bg, borderWidth: 1, borderColor: Theme.border },
+  reasonChipActive: { backgroundColor: Theme.brandSoft, borderColor: Theme.brand },
+  reasonChipText: { color: Theme.textMuted, fontSize: 12, fontWeight: "600" },
+  reasonInput: { backgroundColor: Theme.bg, borderRadius: 12, padding: 12, color: Theme.text, minHeight: 76, textAlignVertical: "top", borderWidth: 1, borderColor: Theme.border },
+  dialogActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, flexWrap: "wrap", alignItems: "center" },
+  blockBtn: { backgroundColor: Theme.dangerSoft, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, marginRight: "auto" },
+  blockBtnText: { color: Theme.danger, fontWeight: "700", fontSize: 12 },
   cancelBtn: { paddingHorizontal: 12, paddingVertical: 10 },
 });

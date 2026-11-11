@@ -15,11 +15,11 @@ export const Button = React.forwardRef<HTMLButtonElement, BtnProps>(function But
   { className, variant = "primary", size = "md", loading, children, disabled, ...p }, ref,
 ) {
   const v = {
-    primary: "bg-brand text-brand-fg hover:brightness-110 shadow-sm",
+    primary: "bg-brand text-brand-fg hover:brightness-110 shadow-sm shadow-brand/20",
     secondary: "bg-elevated text-fg hover:bg-line",
     ghost: "hover:bg-elevated text-fg",
-    danger: "bg-danger text-white hover:brightness-110",
-    outline: "border border-line hover:bg-elevated text-fg",
+    danger: "bg-danger text-white hover:brightness-110 shadow-sm shadow-danger/20",
+    outline: "border border-line hover:bg-elevated hover:border-muted/40 text-fg",
   }[variant];
   const s = { sm: "h-8 px-3 text-sm", md: "h-10 px-4 text-sm", lg: "h-12 px-6 text-base", icon: "h-10 w-10" }[size];
   return (
@@ -59,14 +59,19 @@ export function Field({ label, error, hint, children }: { label: string; error?:
 }
 
 export const Card = ({ className, ...p }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("rounded-2xl border border-line bg-surface", className)} {...p} />
+  <div className={cn("rounded-2xl border border-line bg-surface shadow-sm", className)} {...p} />
 );
 
 export const Skeleton = ({ className }: { className?: string }) => <div aria-hidden className={cn("skeleton rounded-xl", className)} />;
 
 const statusStyle: Record<string, string> = {
-  pending: "bg-warn/15 text-warn", approved: "bg-success/15 text-success", rejected: "bg-danger/15 text-danger",
-  hidden: "bg-muted/15 text-muted", open: "bg-warn/15 text-warn", resolved: "bg-success/15 text-success", dismissed: "bg-muted/15 text-muted",
+  pending: "bg-warn/15 text-warn ring-1 ring-warn/30",
+  approved: "bg-success/15 text-success ring-1 ring-success/30",
+  rejected: "bg-danger/15 text-danger ring-1 ring-danger/30",
+  hidden: "bg-muted/15 text-muted ring-1 ring-line",
+  open: "bg-warn/15 text-warn ring-1 ring-warn/30",
+  resolved: "bg-success/15 text-success ring-1 ring-success/30",
+  dismissed: "bg-muted/15 text-muted ring-1 ring-line",
 };
 export const StatusBadge = ({ status }: { status: Status | string }) => (
   <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize", statusStyle[status] ?? "bg-elevated")}>{status}</span>
@@ -129,7 +134,7 @@ export function Modal({ open, onClose, title, children }: { open: boolean; onClo
   }, [open, onClose]);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[90] grid place-items-center bg-black/60 p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 z-[90] grid place-items-center bg-black/65 p-4 backdrop-blur-sm" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div role="dialog" aria-modal="true" aria-label={title} className="w-full max-w-md animate-fade-up rounded-2xl border border-line bg-surface p-5 shadow-2xl">
         <h2 className="mb-3 font-display text-xl font-semibold">{title}</h2>
         {children}

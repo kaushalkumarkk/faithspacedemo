@@ -11,9 +11,9 @@ interface Overview {
 
 function Stat({ label, value, tone }: { label: string; value: number; tone?: string }) {
   return (
-    <Card className="p-4">
-      <p className="text-xs text-muted">{label}</p>
-      <p className={`font-display text-3xl font-semibold tabular-nums ${tone ?? ""}`}>{value}</p>
+    <Card className="p-4 transition hover:border-brand/40">
+      <p className="text-xs font-medium text-muted">{label}</p>
+      <p className={`mt-1 font-display text-3xl font-semibold tabular-nums ${tone ?? ""}`}>{value}</p>
     </Card>
   );
 }

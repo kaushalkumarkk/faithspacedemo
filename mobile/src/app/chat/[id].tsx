@@ -13,8 +13,11 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { api, type Message, type User } from "@/lib/api";
+import { api, timeAgo, type Message, type User } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { Theme } from "@/lib/theme";
+
+const CHAT_REPORT_REASONS = ["Harassment", "Spam", "Inappropriate message", "Safety concern"];
 
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -100,12 +103,12 @@ export default function ChatScreen() {
           title: other?.display_name ?? "Chat",
           headerRight: () =>
             other ? (
-              <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
+              <View style={{ flexDirection: "row", gap: 14, alignItems: "center" }}>
                 <Pressable onPress={() => { setReason(""); setReportTarget({ type: "user", id: other.id, label: other.display_name }); }}>
-                  <Ionicons name="flag-outline" size={20} color="#fff" />
+                  <Ionicons name="flag-outline" size={20} color={Theme.text} />
                 </Pressable>
                 <Pressable onPress={toggleBlock}>
-                  <Ionicons name={other.is_blocked ? "shield-checkmark" : "ban"} size={20} color={other.is_blocked ? "#2ed573" : "#ff6b81"} />
+                  <Ionicons name={other.is_blocked ? "shield-checkmark" : "ban"} size={20} color={other.is_blocked ? Theme.success : Theme.danger} />
                 </Pressable>
               </View>
             ) : null,
@@ -118,6 +121,7 @@ export default function ChatScreen() {
         keyExtractor={(m) => String(m.id)}
         contentContainerStyle={{ padding: 14, gap: 10 }}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+        ListEmptyComponent={<Text style={styles.empty}>No messages yet. Say hello!</Text>}
         renderItem={({ item: m }) => {
           const mine = m.sender_id === me?.id;
           return (
@@ -133,9 +137,21 @@ export default function ChatScreen() {
               >
                 <Text style={styles.bubbleText}>{m.body}</Text>
               </Pressable>
-              {mine && m.id === lastMineId && (
-                <Text style={styles.receipt}>{m.read_at ? "Seen" : "Sent"}</Text>
-              )}
+              <View style={styles.metaRow}>
+                <Text style={styles.metaText}>{timeAgo(m.created_at)}</Text>
+                {mine && m.id === lastMineId && (
+                  <View style={styles.receiptRow}>
+                    <Ionicons
+                      name={m.read_at ? "checkmark-done" : "checkmark"}
+                      size={13}
+                      color={m.read_at ? Theme.success : Theme.textMuted}
+                    />
+                    <Text style={[styles.metaText, m.read_at && { color: Theme.success }]}>
+                      {m.read_at ? "Seen" : "Sent"}
+                    </Text>
+                  </View>
+                )}
+              </View>
             </View>
           );
         }}
@@ -157,11 +173,11 @@ export default function ChatScreen() {
           <TextInput
             style={styles.input}
             placeholder="Write a message..."
-            placeholderTextColor="#7c7b8a"
+            placeholderTextColor={Theme.textMuted}
             value={text}
             onChangeText={setText}
           />
-          <Pressable style={styles.sendBtn} onPress={send}>
+          <Pressable style={[styles.sendBtn, !text.trim() && { opacity: 0.5 }]} onPress={send} disabled={!text.trim()}>
             <Ionicons name="send" size={18} color="#fff" />
           </Pressable>
         </View>
@@ -171,19 +187,30 @@ export default function ChatScreen() {
         <View style={styles.modalBackdrop}>
           <View style={styles.dialog}>
             <Text style={styles.modalTitle}>Report {reportTarget?.label}</Text>
+            <View style={styles.chipWrap}>
+              {CHAT_REPORT_REASONS.map((r) => (
+                <Pressable key={r} onPress={() => setReason(r)} style={[styles.chip, reason === r && styles.chipActive]}>
+                  <Text style={[styles.chipText, reason === r && { color: Theme.text }]}>{r}</Text>
+                </Pressable>
+              ))}
+            </View>
             <TextInput
               style={styles.reasonInput}
               multiline
               placeholder="Describe the issue..."
-              placeholderTextColor="#7c7b8a"
+              placeholderTextColor={Theme.textMuted}
               value={reason}
               onChangeText={setReason}
             />
             <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 10 }}>
               <Pressable onPress={() => setReportTarget(null)} style={{ padding: 10 }}>
-                <Text style={{ color: "#ccc" }}>Cancel</Text>
+                <Text style={{ color: Theme.textSecondary }}>Cancel</Text>
               </Pressable>
-              <Pressable style={styles.sendBtn} onPress={sendReport}>
+              <Pressable
+                style={[styles.sendBtn, reason.trim().length < 3 && { opacity: 0.5 }]}
+                disabled={reason.trim().length < 3}
+                onPress={sendReport}
+              >
                 <Text style={{ color: "#fff", fontWeight: "700" }}>Send</Text>
               </Pressable>
             </View>
@@ -195,21 +222,28 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#0d0c12" },
-  bubble: { maxWidth: "80%", borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
-  bubbleMine: { backgroundColor: "#7c5cff", borderBottomRightRadius: 4 },
-  bubbleTheirs: { backgroundColor: "#222030", borderBottomLeftRadius: 4 },
-  bubbleText: { color: "#fff", fontSize: 15 },
-  receipt: { color: "#8f8da0", fontSize: 10, marginTop: 3 },
-  composer: { flexDirection: "row", gap: 8, padding: 10, borderTopWidth: 1, borderTopColor: "#282638", backgroundColor: "#14131c" },
-  input: { flex: 1, backgroundColor: "#0d0c12", color: "#fff", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: "#2f2d42" },
-  sendBtn: { backgroundColor: "#7c5cff", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, justifyContent: "center", alignItems: "center" },
-  blockedBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 12, borderTopWidth: 1, borderTopColor: "#282638", backgroundColor: "#1d1826" },
-  blockedText: { color: "#ff8c9b", fontSize: 12, flex: 1 },
-  unblockBtn: { backgroundColor: "#2d2a40", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
-  unblockText: { color: "#fff", fontWeight: "700", fontSize: 12 },
-  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.65)", justifyContent: "center", padding: 20 },
-  dialog: { backgroundColor: "#171622", borderRadius: 16, padding: 16, gap: 12, borderWidth: 1, borderColor: "#2f2d42" },
-  modalTitle: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  reasonInput: { backgroundColor: "#0d0c12", color: "#fff", borderRadius: 10, padding: 12, minHeight: 80, textAlignVertical: "top", borderWidth: 1, borderColor: "#2f2d42" },
+  screen: { flex: 1, backgroundColor: Theme.bg },
+  empty: { color: Theme.textMuted, textAlign: "center", marginTop: 40, fontSize: 13 },
+  bubble: { maxWidth: "82%", borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10 },
+  bubbleMine: { backgroundColor: Theme.brand, borderBottomRightRadius: 4 },
+  bubbleTheirs: { backgroundColor: Theme.surfaceElevated, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: Theme.border },
+  bubbleText: { color: "#fff", fontSize: 15, lineHeight: 20 },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 3 },
+  receiptRow: { flexDirection: "row", alignItems: "center", gap: 2 },
+  metaText: { color: Theme.textMuted, fontSize: 10 },
+  composer: { flexDirection: "row", gap: 8, padding: 10, borderTopWidth: 1, borderTopColor: Theme.border, backgroundColor: Theme.surface },
+  input: { flex: 1, backgroundColor: Theme.bg, color: Theme.text, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: Theme.border },
+  sendBtn: { backgroundColor: Theme.brand, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, justifyContent: "center", alignItems: "center" },
+  blockedBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 12, borderTopWidth: 1, borderTopColor: Theme.border, backgroundColor: Theme.dangerSoft },
+  blockedText: { color: Theme.danger, fontSize: 12, flex: 1, fontWeight: "600" },
+  unblockBtn: { backgroundColor: Theme.surfaceElevated, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
+  unblockText: { color: Theme.text, fontWeight: "700", fontSize: 12 },
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", padding: 20 },
+  dialog: { backgroundColor: Theme.surface, borderRadius: 20, padding: 18, gap: 12, borderWidth: 1, borderColor: Theme.border },
+  modalTitle: { color: Theme.text, fontSize: 16, fontWeight: "700" },
+  chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  chip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, backgroundColor: Theme.bg, borderWidth: 1, borderColor: Theme.border },
+  chipActive: { backgroundColor: Theme.brandSoft, borderColor: Theme.brand },
+  chipText: { color: Theme.textMuted, fontSize: 12, fontWeight: "600" },
+  reasonInput: { backgroundColor: Theme.bg, color: Theme.text, borderRadius: 12, padding: 12, minHeight: 80, textAlignVertical: "top", borderWidth: 1, borderColor: Theme.border },
 });

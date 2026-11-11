@@ -17,7 +17,7 @@ import { cn, formatBytes, formatTime } from "@/lib/utils";
 const VIDEO_TYPES = ["video/mp4", "video/webm"];
 const AUDIO_TYPES = ["audio/mpeg", "audio/mp3", "audio/mp4", "audio/x-m4a", "audio/m4a"];
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
-const MAX_VIDEO = 100, MAX_AUDIO = 60, MAX_IMAGE = 5; // MB — mirrors backend defaults; the server is authoritative.
+const MAX_VIDEO = 250, MAX_AUDIO = 60, MAX_IMAGE = 5; // MB — mirrors backend defaults; the server is authoritative.
 
 function validate(file: File, kind: "video" | "audio" | "episode"): string | null {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";

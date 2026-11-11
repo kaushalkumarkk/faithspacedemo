@@ -110,24 +110,24 @@ export function Reel({ video, active, muted, setMuted, onComments, commentsOpen 
       )}
 
       {/* right action rail */}
-      <div className="absolute bottom-24 right-3 flex flex-col items-center gap-4 text-white">
-        <button aria-label={video.liked_by_me ? "Unlike" : "Like"} aria-pressed={video.liked_by_me} data-testid="like-btn" onClick={needAuth(() => like.mutate())} className="flex flex-col items-center gap-1">
-          <span className="grid h-11 w-11 place-items-center rounded-full bg-black/45 backdrop-blur"><Heart className={cn("h-6 w-6", video.liked_by_me && "animate-pop fill-red-500 text-red-500")} /></span>
+      <div className="absolute bottom-24 right-3 flex flex-col items-center gap-3.5 text-white">
+        <button aria-label={video.liked_by_me ? "Unlike" : "Like"} aria-pressed={video.liked_by_me} data-testid="like-btn" onClick={needAuth(() => like.mutate())} className="group flex flex-col items-center gap-1">
+          <span className="grid h-11 w-11 place-items-center rounded-full bg-black/50 ring-1 ring-white/15 backdrop-blur transition group-hover:scale-105"><Heart className={cn("h-6 w-6", video.liked_by_me && "animate-pop fill-red-500 text-red-500")} /></span>
           <span className="text-xs font-medium" data-testid="like-count">{video.like_count}</span>
         </button>
-        <button aria-label="Comments" data-testid="comments-btn" onClick={onComments} className="flex flex-col items-center gap-1">
-          <span className={cn("grid h-11 w-11 place-items-center rounded-full bg-black/45 backdrop-blur", commentsOpen && "bg-brand")}><MessageCircle className="h-6 w-6" /></span>
+        <button aria-label="Comments" data-testid="comments-btn" onClick={onComments} className="group flex flex-col items-center gap-1">
+          <span className={cn("grid h-11 w-11 place-items-center rounded-full bg-black/50 ring-1 ring-white/15 backdrop-blur transition group-hover:scale-105", commentsOpen && "bg-brand ring-brand")}><MessageCircle className="h-6 w-6" /></span>
           <span className="text-xs font-medium" data-testid="comment-count">{video.comment_count}</span>
         </button>
-        <button aria-label={video.saved_by_me ? "Remove from saved" : "Save video"} aria-pressed={!!video.saved_by_me} data-testid="save-btn" onClick={needAuth(() => saveVideo.mutate())} className="flex flex-col items-center gap-1">
-          <span className="grid h-11 w-11 place-items-center rounded-full bg-black/45 backdrop-blur"><Bookmark className={cn("h-6 w-6", video.saved_by_me && "fill-accent text-accent")} /></span>
+        <button aria-label={video.saved_by_me ? "Remove from saved" : "Save video"} aria-pressed={!!video.saved_by_me} data-testid="save-btn" onClick={needAuth(() => saveVideo.mutate())} className="group flex flex-col items-center gap-1">
+          <span className="grid h-11 w-11 place-items-center rounded-full bg-black/50 ring-1 ring-white/15 backdrop-blur transition group-hover:scale-105"><Bookmark className={cn("h-6 w-6", video.saved_by_me && "fill-accent text-accent")} /></span>
           <span className="text-xs font-medium">{video.saved_by_me ? "Saved" : "Save"}</span>
         </button>
-        <button aria-label={muted ? "Unmute" : "Mute"} onClick={() => setMuted(!muted)} className="grid h-11 w-11 place-items-center rounded-full bg-black/45 backdrop-blur">
+        <button aria-label={muted ? "Unmute" : "Mute"} onClick={() => setMuted(!muted)} className="grid h-11 w-11 place-items-center rounded-full bg-black/50 ring-1 ring-white/15 backdrop-blur transition hover:scale-105">
           {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
         </button>
-        <button aria-label="Full screen" onClick={() => (document.fullscreenElement ? document.exitFullscreen() : wrap.current?.requestFullscreen?.())} className="grid h-11 w-11 place-items-center rounded-full bg-black/45 backdrop-blur"><Maximize className="h-5 w-5" /></button>
-        <button aria-label="Report video" data-testid="report-video-btn" onClick={needAuth(() => setReport(true))} className="grid h-9 w-9 place-items-center rounded-full bg-black/45 backdrop-blur"><Flag className="h-4 w-4" /></button>
+        <button aria-label="Full screen" onClick={() => (document.fullscreenElement ? document.exitFullscreen() : wrap.current?.requestFullscreen?.())} className="grid h-11 w-11 place-items-center rounded-full bg-black/50 ring-1 ring-white/15 backdrop-blur transition hover:scale-105"><Maximize className="h-5 w-5" /></button>
+        <button aria-label="Report video" data-testid="report-video-btn" onClick={needAuth(() => setReport(true))} className="grid h-9 w-9 place-items-center rounded-full bg-black/50 ring-1 ring-white/15 backdrop-blur transition hover:scale-105"><Flag className="h-4 w-4" /></button>
       </div>
 
       {/* caption */}
@@ -159,6 +159,14 @@ export function Reel({ video, active, muted, setMuted, onComments, commentsOpen 
 
       <Modal open={report} onClose={() => setReport(false)} title="Report or block">
         <form onSubmit={(e) => { e.preventDefault(); submitReport.mutate(); }} className="space-y-3">
+          <div className="flex flex-wrap gap-1.5">
+            {["Inappropriate content", "Spam or misleading", "Harassment or hate", "Audio / video issue"].map((preset) => (
+              <button key={preset} type="button" onClick={() => setReason(preset)}
+                className={cn("rounded-full border px-2.5 py-1 text-xs font-medium transition", reason === preset ? "border-brand bg-brand/10 text-brand" : "border-line text-muted hover:bg-elevated")}>
+                {preset}
+              </button>
+            ))}
+          </div>
           <Textarea aria-label="Reason" required minLength={3} maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="What’s wrong with this video?" />
           <div className="flex flex-wrap items-center justify-between gap-2">
             {user && user.id !== video.owner.id ? (

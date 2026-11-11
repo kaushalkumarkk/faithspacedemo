@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     access_token_minutes: int = 60 * 24
     storage_dir: Path = BASE_DIR / "storage"
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
-    max_video_mb: int = 100
+    max_video_mb: int = 250
     max_audio_mb: int = 60
     max_image_mb: int = 5
     login_rate_limit: int = 10  # attempts per minute per IP

@@ -144,6 +144,14 @@ export function formatTime(sec: number | null | undefined): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+export function timeAgo(iso: string): string {
+  const diff = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
 export type Role = "viewer" | "creator" | "admin";
 export type Status = "pending" | "approved" | "rejected" | "hidden";
 
@@ -188,7 +196,9 @@ export interface Video {
   owner: User;
   like_count: number;
   comment_count: number;
+  view_count?: number;
   liked_by_me: boolean;
+  saved_by_me?: boolean;
   created_at: string;
   published_at: string | null;
 }

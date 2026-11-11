@@ -1,22 +1,28 @@
 import { Image } from "expo-image";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { api, formatTime, mediaSrc, type ModItem, type Page, type Report, type User } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { statusColors, Theme } from "@/lib/theme";
+
+const STATUS_FILTERS = ["all", "pending", "approved", "hidden", "rejected"] as const;
 
 export default function AdminScreen() {
   const { user: me } = useAuth();
   const [tab, setTab] = useState<"queue" | "reports" | "users">("queue");
+  const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>("all");
   const [items, setItems] = useState<ModItem[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [rejecting, setRejecting] = useState<ModItem | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
 
   const load = useCallback(async () => {
     if (me?.role !== "admin") return;
     try {
       const [q, r, u] = await Promise.all([
-        api<Page<ModItem>>("/admin/moderation/queue?status=all&page_size=30"),
+        api<Page<ModItem>>("/admin/moderation/queue?status=all&page_size=40"),
         api<Page<Report>>("/admin/reports?status=open&page_size=30"),
         api<Page<User>>("/users?page_size=30"),
       ]);
@@ -32,15 +38,28 @@ export default function AdminScreen() {
     }, [load]),
   );
 
-  const moderate = async (it: ModItem, action: "approve" | "restore" | "hide" | "reject" | "remove") => {
+  const moderate = async (it: ModItem, action: "approve" | "restore" | "hide" | "remove") => {
     try {
       if (action === "remove") {
         await api(`/admin/moderation/${it.type}/${it.id}/remove`, { method: "POST", json: { reason: "Removed by admin" } });
-      } else if (action === "reject") {
-        await api(`/admin/moderation/${it.type}/${it.id}/reject`, { method: "POST", json: { reason: "Does not meet guidelines" } });
       } else {
         await api(`/admin/moderation/${it.type}/${it.id}/${action}`, { method: "POST", json: {} });
       }
+      await load();
+    } catch (e) {
+      Alert.alert("Error", (e as Error).message);
+    }
+  };
+
+  const confirmReject = async () => {
+    if (!rejecting || rejectReason.trim().length < 3) return;
+    try {
+      await api(`/admin/moderation/${rejecting.type}/${rejecting.id}/reject`, {
+        method: "POST",
+        json: { reason: rejectReason.trim() },
+      });
+      setRejecting(null);
+      setRejectReason("");
       await load();
     } catch (e) {
       Alert.alert("Error", (e as Error).message);
@@ -106,13 +125,36 @@ export default function AdminScreen() {
   if (me?.role !== "admin") {
     return (
       <View style={styles.center}>
-        <Text style={{ color: "#fff" }}>Admin access required.</Text>
+        <Text style={{ color: Theme.text }}>Admin access required.</Text>
       </View>
     );
   }
 
+  const pendingCount = items.filter((i) => i.status === "pending").length;
+  const filteredItems = statusFilter === "all" ? items : items.filter((i) => i.status === statusFilter);
+
   return (
     <View style={styles.screen}>
+      {/* Summary bar */}
+      <View style={styles.statsBar}>
+        <View style={styles.statChip}>
+          <Text style={[styles.statVal, { color: Theme.warn }]}>{pendingCount}</Text>
+          <Text style={styles.statLbl}>Pending</Text>
+        </View>
+        <View style={styles.statChip}>
+          <Text style={[styles.statVal, { color: Theme.danger }]}>{reports.length}</Text>
+          <Text style={styles.statLbl}>Reports</Text>
+        </View>
+        <View style={styles.statChip}>
+          <Text style={[styles.statVal, { color: Theme.success }]}>{items.filter((i) => i.status === "approved").length}</Text>
+          <Text style={styles.statLbl}>Live</Text>
+        </View>
+        <View style={styles.statChip}>
+          <Text style={styles.statVal}>{users.length}</Text>
+          <Text style={styles.statLbl}>Users</Text>
+        </View>
+      </View>
+
       <View style={styles.tabs}>
         {([["queue", `Content (${items.length})`], ["reports", `Reports (${reports.length})`], ["users", `Users (${users.length})`]] as const).map(([k, label]) => (
           <Pressable key={k} onPress={() => setTab(k)} style={[styles.tab, tab === k && styles.tabActive]}>
@@ -121,20 +163,36 @@ export default function AdminScreen() {
         ))}
       </View>
 
+      {tab === "queue" && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow} style={{ flexGrow: 0 }}>
+          {STATUS_FILTERS.map((s) => (
+            <Pressable key={s} onPress={() => setStatusFilter(s)} style={[styles.filterPill, statusFilter === s && styles.filterPillActive]}>
+              <Text style={[styles.filterText, statusFilter === s && { color: "#fff" }]}>{s}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
+
       <ScrollView contentContainerStyle={styles.container}>
         {tab === "queue" &&
-          items.map((it) => {
+          filteredItems.map((it) => {
             const thumb = mediaSrc(it.thumbnail_url, it.status);
+            const sc = statusColors(it.status);
             return (
               <View key={`${it.type}-${it.id}`} style={styles.card}>
                 <View style={styles.row}>
                   {thumb && <Image source={{ uri: thumb }} style={styles.thumb} contentFit="cover" />}
-                  <View style={{ flex: 1 }}>
+                  <View style={{ flex: 1, gap: 4 }}>
                     <Text style={styles.title}>{it.title}</Text>
-                    <Text style={styles.meta}>
-                      {it.type.toUpperCase()} · {it.status} · {it.owner.display_name}
-                      {it.duration_seconds != null ? ` · ${formatTime(it.duration_seconds)}` : ""}
-                    </Text>
+                    <View style={styles.badgeLine}>
+                      <View style={[styles.statusBadge, { backgroundColor: sc.bg }]}>
+                        <Text style={[styles.statusText, { color: sc.fg }]}>{it.status}</Text>
+                      </View>
+                      <Text style={styles.meta}>
+                        {it.type.toUpperCase()} · {it.owner.display_name}
+                        {it.duration_seconds != null ? ` · ${formatTime(it.duration_seconds)}` : ""}
+                      </Text>
+                    </View>
                   </View>
                 </View>
                 <View style={styles.btnRow}>
@@ -143,7 +201,7 @@ export default function AdminScreen() {
                       <Pressable style={styles.primaryBtn} onPress={() => moderate(it, "approve")}>
                         <Text style={styles.btnText}>Approve</Text>
                       </Pressable>
-                      <Pressable style={styles.warnBtn} onPress={() => moderate(it, "reject")}>
+                      <Pressable style={styles.warnBtn} onPress={() => { setRejectReason(""); setRejecting(it); }}>
                         <Text style={styles.btnText}>Reject</Text>
                       </Pressable>
                     </>
@@ -167,24 +225,28 @@ export default function AdminScreen() {
           })}
 
         {tab === "reports" &&
-          reports.map((r) => (
-            <View key={r.id} style={styles.card}>
-              <Text style={styles.meta}>
-                {r.target_type.toUpperCase()} · reported by {r.reporter.display_name}
-              </Text>
-              <Text style={styles.title}>{r.target_title}</Text>
-              <Text style={styles.reason}>“{r.reason}”</Text>
-              <View style={styles.btnRow}>
-                <Pressable style={styles.dangerBtn} onPress={() => removeReported(r)}>
-                  <Text style={styles.dangerText}>
-                    {r.target_type === "message" ? "Suspend sender" : "Remove permanently"}
-                  </Text>
-                </Pressable>
-                <Pressable style={styles.secBtn} onPress={() => dismissReport(r.id)}>
-                  <Text style={styles.btnText}>Dismiss</Text>
-                </Pressable>
+          (reports.length === 0 ? (
+            <Text style={styles.empty}>No open reports.</Text>
+          ) : (
+            reports.map((r) => (
+              <View key={r.id} style={styles.card}>
+                <Text style={styles.meta}>
+                  {r.target_type.toUpperCase()} · reported by {r.reporter.display_name}
+                </Text>
+                <Text style={styles.title}>{r.target_title}</Text>
+                <Text style={styles.reason}>“{r.reason}”</Text>
+                <View style={styles.btnRow}>
+                  <Pressable style={styles.dangerBtn} onPress={() => removeReported(r)}>
+                    <Text style={styles.dangerText}>
+                      {r.target_type === "message" ? "Suspend sender" : "Remove permanently"}
+                    </Text>
+                  </Pressable>
+                  <Pressable style={styles.secBtn} onPress={() => dismissReport(r.id)}>
+                    <Text style={styles.btnText}>Dismiss</Text>
+                  </Pressable>
+                </View>
               </View>
-            </View>
+            ))
           ))}
 
         {tab === "users" &&
@@ -209,30 +271,71 @@ export default function AdminScreen() {
             </View>
           ))}
       </ScrollView>
+
+      <Modal visible={!!rejecting} transparent animationType="fade" onRequestClose={() => setRejecting(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.dialog}>
+            <Text style={styles.title}>Reject “{rejecting?.title}”</Text>
+            <TextInput
+              style={styles.input}
+              multiline
+              placeholder="Reason shown to the creator..."
+              placeholderTextColor={Theme.textMuted}
+              value={rejectReason}
+              onChangeText={setRejectReason}
+            />
+            <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 10 }}>
+              <Pressable onPress={() => setRejecting(null)} style={{ padding: 10 }}><Text style={{ color: Theme.textSecondary }}>Cancel</Text></Pressable>
+              <Pressable
+                style={[styles.warnBtn, rejectReason.trim().length < 3 && { opacity: 0.5 }]}
+                disabled={rejectReason.trim().length < 3}
+                onPress={confirmReject}
+              >
+                <Text style={styles.btnText}>Reject</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#0d0c12" },
-  center: { flex: 1, backgroundColor: "#0d0c12", alignItems: "center", justifyContent: "center" },
-  tabs: { flexDirection: "row", padding: 10, gap: 8, backgroundColor: "#14131c", borderBottomWidth: 1, borderBottomColor: "#282638" },
-  tab: { flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: "center", backgroundColor: "#1d1b2b" },
-  tabActive: { backgroundColor: "#7c5cff" },
-  tabText: { color: "#9c9aa8", fontSize: 12, fontWeight: "700" },
+  screen: { flex: 1, backgroundColor: Theme.bg },
+  center: { flex: 1, backgroundColor: Theme.bg, alignItems: "center", justifyContent: "center" },
+  statsBar: { flexDirection: "row", gap: 8, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 },
+  statChip: { flex: 1, backgroundColor: Theme.surface, borderRadius: 12, paddingVertical: 8, alignItems: "center", borderWidth: 1, borderColor: Theme.border },
+  statVal: { color: Theme.text, fontSize: 16, fontWeight: "800" },
+  statLbl: { color: Theme.textMuted, fontSize: 10, marginTop: 1 },
+  tabs: { flexDirection: "row", padding: 10, gap: 8, backgroundColor: Theme.surface, borderBottomWidth: 1, borderBottomColor: Theme.border },
+  tab: { flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: "center", backgroundColor: Theme.bg, borderWidth: 1, borderColor: Theme.border },
+  tabActive: { backgroundColor: Theme.brand, borderColor: Theme.brand },
+  tabText: { color: Theme.textMuted, fontSize: 12, fontWeight: "700" },
   tabTextActive: { color: "#fff" },
+  filterRow: { flexDirection: "row", gap: 6, paddingHorizontal: 12, paddingVertical: 8 },
+  filterPill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: Theme.surface, borderWidth: 1, borderColor: Theme.border },
+  filterPillActive: { backgroundColor: Theme.brandSoft, borderColor: Theme.brand },
+  filterText: { color: Theme.textMuted, fontSize: 12, fontWeight: "600", textTransform: "capitalize" },
   container: { padding: 12, gap: 10 },
-  card: { backgroundColor: "#171622", borderRadius: 14, padding: 12, borderWidth: 1, borderColor: "#282638", gap: 8 },
+  card: { backgroundColor: Theme.surface, borderRadius: 16, padding: 13, borderWidth: 1, borderColor: Theme.border, gap: 10 },
   row: { flexDirection: "row", gap: 10, alignItems: "center" },
-  thumb: { width: 42, height: 60, borderRadius: 8, backgroundColor: "#000" },
-  title: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  meta: { color: "#9c9aa8", fontSize: 12 },
-  reason: { color: "#e0dfe8", fontSize: 13 },
+  thumb: { width: 44, height: 64, borderRadius: 10, backgroundColor: "#000" },
+  title: { color: Theme.text, fontWeight: "700", fontSize: 14 },
+  badgeLine: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },
+  statusBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 },
+  statusText: { fontSize: 10, fontWeight: "700", textTransform: "capitalize" },
+  meta: { color: Theme.textMuted, fontSize: 12 },
+  reason: { color: Theme.textSecondary, fontSize: 13 },
+  empty: { color: Theme.textMuted, textAlign: "center", marginTop: 32 },
   btnRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  primaryBtn: { backgroundColor: "#7c5cff", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8 },
-  warnBtn: { backgroundColor: "#8a4b16", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8 },
-  secBtn: { backgroundColor: "#252336", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8 },
-  dangerBtn: { backgroundColor: "#3a1b24", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8 },
+  primaryBtn: { backgroundColor: Theme.brand, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9 },
+  warnBtn: { backgroundColor: "#9a5012", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9 },
+  secBtn: { backgroundColor: Theme.surfaceElevated, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9, borderWidth: 1, borderColor: Theme.border },
+  dangerBtn: { backgroundColor: Theme.dangerSoft, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9 },
   btnText: { color: "#fff", fontSize: 12, fontWeight: "700" },
-  dangerText: { color: "#ff6b81", fontSize: 12, fontWeight: "700" },
+  dangerText: { color: Theme.danger, fontSize: 12, fontWeight: "700" },
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", padding: 20 },
+  dialog: { backgroundColor: Theme.surface, borderRadius: 20, padding: 18, gap: 12, borderWidth: 1, borderColor: Theme.border },
+  input: { backgroundColor: Theme.bg, color: Theme.text, borderRadius: 12, padding: 12, minHeight: 80, textAlignVertical: "top", borderWidth: 1, borderColor: Theme.border },
 });
