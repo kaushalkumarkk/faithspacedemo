@@ -19,11 +19,14 @@ export function GradientAvatar({
   url,
   size = 44,
   ring = false,
+  online,
 }: {
   name: string;
   url?: string | null;
   size?: number;
   ring?: boolean;
+  /** true = green dot, false = grey dot, undefined = no indicator */
+  online?: boolean;
 }) {
   const src = mediaSrc(url);
   const innerSize = ring ? size - 4 : size;
@@ -59,9 +62,7 @@ export function GradientAvatar({
     </LinearGradient>
   );
 
-  if (!ring) return content;
-
-  return (
+  const ringed = !ring ? content : (
     <LinearGradient
       colors={["#7C5CFF", "#22D3EE"]}
       start={{ x: 0, y: 0 }}
@@ -77,6 +78,27 @@ export function GradientAvatar({
     >
       {content}
     </LinearGradient>
+  );
+
+  if (online === undefined) return ringed;
+  const dot = Math.max(10, Math.round(size * 0.28));
+  return (
+    <View style={{ width: size, height: size }}>
+      {ringed}
+      <View
+        style={{
+          position: "absolute",
+          right: 0,
+          bottom: 0,
+          width: dot,
+          height: dot,
+          borderRadius: dot / 2,
+          backgroundColor: online ? "#22C55E" : "#6B7280",
+          borderWidth: 2,
+          borderColor: Theme.bg,
+        }}
+      />
+    </View>
   );
 }
 

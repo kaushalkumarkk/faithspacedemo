@@ -4,10 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { EmptyView, GradientAvatar, hapticLight } from "@/components/ui";
 import { api, timeAgo, type Conversation, type User } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { Theme } from "@/lib/theme";
 
 export default function MessagesScreen() {
   const router = useRouter();
+  const { user: me } = useAuth();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<User[]>([]);
   const [convos, setConvos] = useState<Conversation[]>([]);
@@ -16,7 +18,9 @@ export default function MessagesScreen() {
   const loadConvos = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
     try {
-      setConvos(await api<Conversation[]>("/messages/conversations"));
+      const next = await api<Conversation[]>("/messages/conversations");
+      // Polling: keep the same array when nothing changed so the list doesn't re-render/flicker.
+      setConvos((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
     } catch {} finally {
       if (manual) setRefreshing(false);
     }
@@ -104,15 +108,24 @@ export default function MessagesScreen() {
               router.push(`/chat/${c.user.id}`);
             }}
           >
-            <GradientAvatar name={c.user.display_name} url={c.user.avatar_url} size={48} ring={c.unread_count > 0} />
+            <GradientAvatar name={c.user.display_name} url={c.user.avatar_url} size={48} ring={c.unread_count > 0} online={!!c.user.is_online} />
             <View style={{ flex: 1 }}>
               <View style={styles.convoTop}>
                 <Text style={styles.name}>{c.user.display_name}</Text>
                 <Text style={styles.time}>{timeAgo(c.last_at)}</Text>
               </View>
-              <Text style={[styles.preview, c.unread_count > 0 && styles.previewUnread]} numberOfLines={1}>
-                {c.last_message}
-              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                {c.last_sender_id === me?.id && (
+                  <Ionicons
+                    name={c.last_read_at ? "checkmark-done" : "checkmark"}
+                    size={14}
+                    color={c.last_read_at ? Theme.accent : Theme.textMuted}
+                  />
+                )}
+                <Text style={[styles.preview, { flex: 1 }, c.unread_count > 0 && styles.previewUnread]} numberOfLines={1}>
+                  {c.last_message}
+                </Text>
+              </View>
             </View>
             {c.unread_count > 0 && (
               <View style={styles.badge}>

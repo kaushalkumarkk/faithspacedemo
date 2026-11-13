@@ -31,6 +31,7 @@ class User(Base):
     avatar_asset_id: Mapped[int | None] = mapped_column(
         ForeignKey("media_assets.id", ondelete="SET NULL", use_alter=True, name="fk_user_avatar"), nullable=True
     )
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     avatar = relationship("MediaAsset", foreign_keys=[avatar_asset_id], lazy="joined")

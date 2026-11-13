@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi import Depends, HTTPException, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
@@ -29,9 +31,17 @@ def optional_user(
     return _user_from_token(db, creds.credentials if creds else None)
 
 
-def current_user(user: User | None = Depends(optional_user)) -> User:
+def current_user(user: User | None = Depends(optional_user), db: Session = Depends(get_db)) -> User:
     if user is None:
         raise err(401, "unauthenticated", "Authentication required.")
+    # Presence: any authenticated request counts as activity (written at most every 30s per user).
+    now = datetime.now(timezone.utc)
+    seen = user.last_seen_at
+    if seen is not None and seen.tzinfo is None:
+        seen = seen.replace(tzinfo=timezone.utc)
+    if seen is None or now - seen > timedelta(seconds=30):
+        user.last_seen_at = now
+        db.commit()
     return user
 
 

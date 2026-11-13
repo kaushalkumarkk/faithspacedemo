@@ -43,7 +43,7 @@ def conversations(user: User = Depends(member_user), db: Session = Depends(get_d
         other = db.get(User, other_id)
         if other:
             out.append(s.ConversationOut(user=user_out(db, other, user), last_message=m.body[:140], last_sender_id=m.sender_id,
-                                         last_at=m.created_at, unread_count=unread.get(other_id, 0)))
+                                         last_at=m.created_at, last_read_at=m.read_at, unread_count=unread.get(other_id, 0)))
     return out
 
 

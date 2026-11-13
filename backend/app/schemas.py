@@ -1,9 +1,18 @@
-from datetime import datetime
-from typing import Generic, Literal, TypeVar
+from datetime import datetime, timezone
+from typing import Annotated, Generic, Literal, TypeVar
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import AfterValidator, BaseModel, EmailStr, Field, field_validator
 
 T = TypeVar("T")
+
+
+def _as_utc(v: datetime) -> datetime:
+    # SQLite hands back naive datetimes; treat them as UTC so JSON carries an explicit offset
+    # and clients convert to the viewer's local timezone correctly.
+    return v.replace(tzinfo=timezone.utc) if v.tzinfo is None else v.astimezone(timezone.utc)
+
+
+UTCDateTime = Annotated[datetime, AfterValidator(_as_utc)]
 
 CATEGORIES = ["Reflection", "Music", "Community", "Wisdom", "Wellness", "Education", "Interfaith", "Story"]
 
@@ -52,7 +61,9 @@ class UserOut(BaseModel):
     is_following: bool = False
     is_blocked: bool = False
     blocked_by_target: bool = False
-    created_at: datetime
+    last_seen_at: UTCDateTime | None = None
+    is_online: bool = False
+    created_at: UTCDateTime
 
 
 class TokenOut(BaseModel):
@@ -130,8 +141,8 @@ class VideoOut(BaseModel):
     liked_by_me: bool
     saved_by_me: bool = False
     view_count: int = 0
-    created_at: datetime
-    published_at: datetime | None
+    created_at: UTCDateTime
+    published_at: UTCDateTime | None
 
 
 # ---------- comments ----------
@@ -146,7 +157,7 @@ class CommentOut(BaseModel):
     parent_id: int | None
     body: str
     author: UserOut
-    created_at: datetime
+    created_at: UTCDateTime
     replies: list["CommentOut"] = []
 
 
@@ -156,7 +167,7 @@ class AdminCommentOut(BaseModel):
     video_title: str
     body: str
     author: UserOut
-    created_at: datetime
+    created_at: UTCDateTime
 
 
 # ---------- podcasts ----------
@@ -189,7 +200,7 @@ class PodcastOut(BaseModel):
     cover_url: str | None
     owner: UserOut
     episode_count: int
-    created_at: datetime
+    created_at: UTCDateTime
 
 
 class EpisodeCreate(BaseModel):
@@ -218,8 +229,8 @@ class EpisodeOut(BaseModel):
     category: str
     cover_url: str | None
     owner: UserOut
-    created_at: datetime
-    published_at: datetime | None
+    created_at: UTCDateTime
+    published_at: UTCDateTime | None
 
 
 # ---------- notifications / reports / moderation ----------
@@ -229,7 +240,7 @@ class NotificationOut(BaseModel):
     message: str
     link: str | None
     is_read: bool
-    created_at: datetime
+    created_at: UTCDateTime
 
 
 class ReportCreate(BaseModel):
@@ -247,7 +258,7 @@ class ReportOut(BaseModel):
     reason: str
     status: str
     reporter: UserOut
-    created_at: datetime
+    created_at: UTCDateTime
 
 
 class ReportResolve(BaseModel):
@@ -274,7 +285,7 @@ class ModerationItem(BaseModel):
     mime_type: str
     category: str
     rejection_reason: str | None
-    created_at: datetime
+    created_at: UTCDateTime
 
 
 class ModerationActionOut(BaseModel):
@@ -285,7 +296,7 @@ class ModerationActionOut(BaseModel):
     target_title: str
     action: str
     reason: str | None
-    created_at: datetime
+    created_at: UTCDateTime
 
 
 class MessageCreate(BaseModel):
@@ -297,15 +308,16 @@ class MessageOut(BaseModel):
     sender_id: int
     recipient_id: int
     body: str
-    created_at: datetime
-    read_at: datetime | None
+    created_at: UTCDateTime
+    read_at: UTCDateTime | None
 
 
 class ConversationOut(BaseModel):
     user: UserOut
     last_message: str
     last_sender_id: int
-    last_at: datetime
+    last_at: UTCDateTime
+    last_read_at: UTCDateTime | None = None
     unread_count: int
 
 
@@ -316,4 +328,4 @@ class AuditLogOut(BaseModel):
     entity_type: str
     entity_id: int | None
     details: dict | None
-    created_at: datetime
+    created_at: UTCDateTime

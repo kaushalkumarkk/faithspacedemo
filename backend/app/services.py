@@ -1,4 +1,6 @@
 """Shared helpers: serializers, notifications, audit log, blocking."""
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -43,10 +45,23 @@ def blocked_peer_ids(db: Session, user_id: int) -> set[int]:
     return peers
 
 
+ONLINE_WINDOW = timedelta(seconds=90)
+
+
+def is_online(u: User) -> bool:
+    seen = u.last_seen_at
+    if seen is None:
+        return False
+    if seen.tzinfo is None:
+        seen = seen.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - seen < ONLINE_WINDOW
+
+
 def user_out(db: Session, u: User, viewer: User | None = None, full: bool = False) -> s.UserOut:
     out = s.UserOut(
         id=u.id, display_name=u.display_name, bio=u.bio, role=u.role, is_active=u.is_active, is_guest=u.is_guest,
         avatar_url=s.media_url(u.avatar), created_at=u.created_at,
+        last_seen_at=u.last_seen_at, is_online=is_online(u),
         email=u.email if (viewer and (viewer.id == u.id or viewer.role == "admin")) else None,
     )
     if viewer and viewer.id != u.id:

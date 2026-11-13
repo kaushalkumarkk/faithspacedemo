@@ -145,8 +145,13 @@ export function formatTime(sec: number | null | undefined): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+/** Parse a server timestamp. Values without an offset are UTC (never the device's local time). */
+export function parseServerDate(iso: string): Date {
+  return new Date(/(Z|[+-]\d{2}:?\d{2})$/.test(iso) ? iso : `${iso}Z`);
+}
+
 export function timeAgo(iso: string): string {
-  const diff = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  const diff = Math.max(0, Math.floor((Date.now() - parseServerDate(iso).getTime()) / 1000));
   if (diff < 60) return "just now";
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
@@ -171,6 +176,8 @@ export interface User {
   is_following: boolean;
   is_blocked?: boolean;
   blocked_by_target?: boolean;
+  last_seen_at?: string | null;
+  is_online?: boolean;
   created_at: string;
 }
 
@@ -228,6 +235,7 @@ export interface Conversation {
   last_message: string;
   last_sender_id: number;
   last_at: string;
+  last_read_at?: string | null;
   unread_count: number;
 }
 

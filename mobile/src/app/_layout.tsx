@@ -1,4 +1,4 @@
-import { Stack, useRouter, useSegments } from "expo-router";
+import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
@@ -11,24 +11,12 @@ SplashScreen.preventAutoHideAsync();
 
 function RootNavigator() {
   const { user, loading } = useAuth();
-  const segments = useSegments();
-  const router = useRouter();
 
   useEffect(() => {
     if (!loading) {
       SplashScreen.hideAsync().catch(() => {});
     }
   }, [loading]);
-
-  useEffect(() => {
-    if (loading) return;
-    const inLogin = segments[0] === "login";
-    if (!user && !inLogin) {
-      router.replace("/login");
-    } else if (user && inLogin) {
-      router.replace("/(tabs)");
-    }
-  }, [loading, user, segments, router]);
 
   if (loading) {
     return (
@@ -38,6 +26,8 @@ function RootNavigator() {
     );
   }
 
+  // Route guards switch the active screen in the same render as the auth change,
+  // so there is no frame where the old screen is shown with the new auth state.
   return (
     <Stack
       screenOptions={{
@@ -45,12 +35,17 @@ function RootNavigator() {
         headerTintColor: Theme.text,
         headerShadowVisible: false,
         contentStyle: { backgroundColor: Theme.bg },
+        animation: "fade",
       }}
     >
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="login" options={{ headerShown: false }} />
-      <Stack.Screen name="chat/[id]" options={{ title: "Chat" }} />
-      <Stack.Screen name="user/[id]" options={{ title: "Profile" }} />
+      <Stack.Protected guard={!!user}>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="chat/[id]" options={{ title: "Chat", animation: "default" }} />
+        <Stack.Screen name="user/[id]" options={{ title: "Profile", animation: "default" }} />
+      </Stack.Protected>
+      <Stack.Protected guard={!user}>
+        <Stack.Screen name="login" options={{ headerShown: false }} />
+      </Stack.Protected>
     </Stack>
   );
 }

@@ -27,7 +27,7 @@ export default function NotificationsScreen() {
     if (manual) setRefreshing(true);
     try {
       const res = await api<Page<AppNotification>>("/notifications?page_size=50");
-      setItems(res.items);
+      setItems((prev) => (JSON.stringify(prev) === JSON.stringify(res.items) ? prev : res.items));
     } catch {} finally {
       setLoaded(true);
       if (manual) setRefreshing(false);

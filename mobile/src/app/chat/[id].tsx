@@ -110,10 +110,18 @@ export default function ChatScreen() {
           headerLeft: () =>
             other ? (
               <Pressable onPress={() => router.push(`/user/${other.id}`)} style={styles.headerUser}>
-                <GradientAvatar name={other.display_name} url={other.avatar_url} size={32} />
+                <GradientAvatar name={other.display_name} url={other.avatar_url} size={32} online={!!other.is_online} />
                 <View>
                   <Text style={styles.headerName}>{other.display_name}</Text>
-                  <Text style={styles.headerRole}>{other.is_blocked ? "Blocked" : other.role}</Text>
+                  <Text style={[styles.headerRole, other.is_online && !other.is_blocked && { color: Theme.success }]}>
+                    {other.is_blocked
+                      ? "Blocked"
+                      : other.is_online
+                        ? "Online"
+                        : other.last_seen_at
+                          ? `Last seen ${timeAgo(other.last_seen_at)}`
+                          : "Offline"}
+                  </Text>
                 </View>
               </Pressable>
             ) : null,
