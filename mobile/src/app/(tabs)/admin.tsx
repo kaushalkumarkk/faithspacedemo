@@ -64,7 +64,16 @@ export default function AdminScreen() {
   useFocusEffect(
     useCallback(() => {
       load();
-    }, [load]),
+      // Keep online/offline status fresh while the tab is open (only the cheap user list).
+      const id = setInterval(async () => {
+        if (me?.role !== "admin") return;
+        try {
+          const u = await api<Page<User>>("/users?page_size=30");
+          setUsers((prev) => (JSON.stringify(prev) === JSON.stringify(u.items) ? prev : u.items));
+        } catch {}
+      }, 8000);
+      return () => clearInterval(id);
+    }, [load, me?.role]),
   );
 
   const moderate = async (it: ModItem, action: "approve" | "restore" | "hide" | "remove") => {
