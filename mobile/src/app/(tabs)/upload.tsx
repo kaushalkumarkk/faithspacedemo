@@ -4,6 +4,7 @@ import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 import { createVideoPlayer, useVideoPlayer, VideoView } from "expo-video";
+import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -19,6 +20,8 @@ import { api, CATEGORIES, formatTime, uploadMediaFile, type Video } from "@/lib/
 import { Theme } from "@/lib/theme";
 
 export default function UploadScreen() {
+  const router = useRouter();
+  const [submitted, setSubmitted] = useState<{ title: string } | null>(null);
   const [videoUri, setVideoUri] = useState<string | null>(null);
   const [videoName, setVideoName] = useState("video.mp4");
   const [durationSec, setDurationSec] = useState<number | null>(null);
@@ -213,16 +216,57 @@ export default function UploadScreen() {
       });
 
       hapticSuccess();
+      const submittedTitle = title.trim();
       clearSelection();
       setTitle("");
       setDescription("");
-      Alert.alert("Published to Queue", "Your video & thumbnail are submitted for moderation.");
+      setSubmitted({ title: submittedTitle });
     } catch (e) {
       Alert.alert("Upload failed", (e as Error).message);
     } finally {
       setSaving(false);
     }
   };
+
+  if (submitted) {
+    return (
+      <ScrollView style={styles.screen} contentContainerStyle={[styles.container, { paddingTop: 40 }]}>
+        <View style={[styles.card, { alignItems: "center", gap: 14, paddingVertical: 28 }]}>
+          <View style={styles.doneIcon}>
+            <Ionicons name="checkmark" size={38} color="#fff" />
+          </View>
+          <Text style={styles.heading}>Video uploaded</Text>
+          <Text style={[styles.fileTitle, { textAlign: "center" }]} numberOfLines={2}>
+            {submitted.title}
+          </Text>
+          <View style={styles.pendingPill}>
+            <Ionicons name="time-outline" size={16} color={Theme.warn} />
+            <Text style={styles.pendingText}>Waiting for admin approval</Text>
+          </View>
+          <Text style={[styles.sub, { textAlign: "center" }]}>
+            It stays private until an admin approves it. You'll get a notification when it is approved or rejected.
+          </Text>
+          <GradientButton
+            label="View my videos"
+            icon="albums-outline"
+            onPress={() => {
+              hapticLight();
+              router.push("/(tabs)/profile");
+            }}
+            style={{ alignSelf: "stretch" }}
+          />
+          <Pressable
+            onPress={() => {
+              hapticLight();
+              setSubmitted(null);
+            }}
+          >
+            <Text style={styles.linkText}>Upload another video</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
+    );
+  }
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
@@ -283,20 +327,28 @@ export default function UploadScreen() {
           </View>
 
           {bgState === "uploading" && (
-            <View style={styles.progressWrap}>
-              <LinearGradient
-                colors={[Theme.brand, Theme.accent]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={[styles.progressBar, { width: `${pct}%` }]}
-              />
-              <Text style={styles.progressText}>Uploading in background... {pct}%</Text>
+            <View style={{ gap: 6 }}>
+              <View style={styles.progressHead}>
+                <Text style={styles.progressLabel}>
+                  {saving ? "Uploading — will submit automatically when done" : "Uploading video..."}
+                </Text>
+                <Text style={styles.progressPct}>{pct}%</Text>
+              </View>
+              <View style={styles.progressTrack}>
+                <LinearGradient
+                  colors={[Theme.brand, Theme.accent]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={[styles.progressFill, { width: `${Math.max(pct, 4)}%` }]}
+                />
+                <Text style={styles.progressInside}>{pct}%</Text>
+              </View>
             </View>
           )}
           {bgState === "ready" && (
             <View style={styles.readyPill}>
               <Ionicons name="checkmark-circle" size={16} color={Theme.success} />
-              <Text style={styles.readyText}>Uploaded & ready for instant submit</Text>
+              <Text style={styles.readyText}>{saving ? "Uploaded — submitting..." : "Upload complete — ready to submit"}</Text>
             </View>
           )}
           {bgState === "error" && (
@@ -384,9 +436,15 @@ const styles = StyleSheet.create({
   fileTitle: { color: Theme.text, fontWeight: "700", fontSize: 14 },
   meta: { color: Theme.textMuted, fontSize: 12 },
   linkText: { color: Theme.accent, fontSize: 12, fontWeight: "700", marginTop: 2 },
-  progressWrap: { height: 24, backgroundColor: Theme.bg, borderRadius: 12, overflow: "hidden", justifyContent: "center", borderWidth: 1, borderColor: Theme.border },
-  progressBar: { position: "absolute", left: 0, top: 0, bottom: 0 },
-  progressText: { color: "#fff", fontSize: 11, fontWeight: "700", textAlign: "center" },
+  progressHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  progressLabel: { color: Theme.textSecondary, fontSize: 12, fontWeight: "600", flex: 1 },
+  progressPct: { color: Theme.text, fontSize: 13, fontWeight: "800" },
+  progressTrack: { height: 26, backgroundColor: Theme.bg, borderRadius: 13, overflow: "hidden", borderWidth: 1, borderColor: Theme.border, justifyContent: "center" },
+  progressFill: { position: "absolute", left: 0, top: 0, bottom: 0, borderRadius: 13 },
+  progressInside: { color: "#fff", fontSize: 12, fontWeight: "800", textAlign: "center" },
+  doneIcon: { width: 72, height: 72, borderRadius: 36, backgroundColor: Theme.success, alignItems: "center", justifyContent: "center" },
+  pendingPill: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: Theme.warnSoft, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 14 },
+  pendingText: { color: Theme.warn, fontSize: 13, fontWeight: "800" },
   readyPill: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: Theme.successSoft, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10 },
   readyText: { color: Theme.success, fontSize: 12, fontWeight: "700" },
   labelRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
