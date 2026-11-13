@@ -78,7 +78,7 @@ export default function MessagesScreen() {
                 router.push(`/chat/${u.id}`);
               }}
             >
-              <GradientAvatar name={u.display_name} url={u.avatar_url} size={36} />
+              <GradientAvatar name={u.display_name} url={u.avatar_url} size={36} online={!!u.is_online} />
               <Text style={styles.name}>{u.display_name}</Text>
               <View style={styles.rolePill}>
                 <Text style={styles.roleText}>{u.role}</Text>

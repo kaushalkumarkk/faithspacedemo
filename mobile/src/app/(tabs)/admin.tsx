@@ -305,7 +305,7 @@ export default function AdminScreen() {
             <View key={u.id} style={styles.card}>
               <Text style={styles.title}>{u.display_name}</Text>
               <Text style={styles.meta}>
-                {u.role} · {u.is_active ? "Active" : "Suspended"} · {u.email}
+                {u.is_online ? "🟢 Online" : "⚫ Offline"} · {u.role} · {u.is_active ? "Active" : "Suspended"} · {u.email}
               </Text>
               {u.id !== me.id && (
                 <View style={styles.btnRow}>

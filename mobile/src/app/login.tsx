@@ -5,7 +5,6 @@ import { useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -70,8 +69,15 @@ export default function LoginScreen() {
         style={StyleSheet.absoluteFill}
       />
       <SafeAreaView style={styles.safe}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-          <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+          <ScrollView
+            contentContainerStyle={styles.container}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+            overScrollMode="never"
+          >
             <View style={styles.brand}>
               <LinearGradient
                 colors={["rgba(124,92,255,0.45)", "rgba(34,211,238,0.35)"]}
@@ -194,7 +200,9 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Theme.bg },
   safe: { flex: 1 },
-  container: { flexGrow: 1, justifyContent: "center", padding: 20, gap: 20 },
+  // Top-aligned (not vertically centred) so the layout does not re-centre and jump when the
+  // keyboard opens or the Sign in / Create account tab changes the card height.
+  container: { paddingHorizontal: 20, paddingTop: 36, paddingBottom: 32, gap: 20 },
   brand: { alignItems: "center", marginBottom: 2 },
   logoRing: { padding: 3, borderRadius: 26, marginBottom: 12 },
   logoImg: { width: 78, height: 78, borderRadius: 23 },
