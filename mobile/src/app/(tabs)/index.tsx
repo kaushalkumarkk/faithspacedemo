@@ -270,9 +270,17 @@ export default function WatchScreen() {
   const [reportTarget, setReportTarget] = useState<{ type: "video" | "comment"; id: number; title: string; ownerId?: number; ownerName?: string } | null>(null);
   const [reportReason, setReportReason] = useState("");
 
+  const lastLoadedAt = useRef(0);
+  const loadFeedRef = useRef<(p?: number, a?: boolean, c?: string | null) => Promise<void>>(async () => {});
+
   useFocusEffect(
     useCallback(() => {
       setScreenFocused(true);
+      // Coming back to the tab after a while: reload so videos that were rejected/hidden/removed
+      // since the last load disappear instead of staying in the stale list.
+      if (lastLoadedAt.current && Date.now() - lastLoadedAt.current > 30000) {
+        loadFeedRef.current(1, false);
+      }
       return () => setScreenFocused(false);
     }, []),
   );
@@ -294,7 +302,8 @@ export default function WatchScreen() {
         } else if (existingIdx === -1) {
           try {
             const deepVid = await api<Video>(`/videos/${targetId}`);
-            items = [deepVid, ...items];
+            // Owners/admins may fetch their own pending/rejected videos; never show those in the public feed.
+            if (deepVid.status === "approved") items = [deepVid, ...items];
           } catch {}
         }
       }
@@ -306,10 +315,12 @@ export default function WatchScreen() {
     } catch (e) {
       Alert.alert("Feed error", (e as Error).message);
     } finally {
+      lastLoadedAt.current = Date.now();
       setLoading(false);
       setLoadingMore(false);
     }
   }, [selectedCategory, deepLinkId]);
+  loadFeedRef.current = (p = 1, a = false, c = selectedCategory) => loadFeed(p, a, c);
 
   useEffect(() => {
     setActiveIdx(0);
