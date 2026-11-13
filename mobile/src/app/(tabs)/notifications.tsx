@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { EmptyView, hapticLight } from "@/components/ui";
 import { api, timeAgo, type AppNotification, type Page } from "@/lib/api";
+import { emitBadgesChanged } from "@/lib/badges";
 import { Theme } from "@/lib/theme";
 
 const ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -47,8 +48,10 @@ export default function NotificationsScreen() {
   const markAll = async () => {
     hapticLight();
     setItems((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    emitBadgesChanged({ alerts: 0 });
     try {
       await api("/notifications/read-all", { method: "POST" });
+      emitBadgesChanged();
     } catch {
       load();
     }
@@ -58,7 +61,10 @@ export default function NotificationsScreen() {
     hapticLight();
     if (!n.is_read) {
       setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)));
-      api(`/notifications/${n.id}/read`, { method: "POST" }).catch(() => load());
+      emitBadgesChanged({ alerts: Math.max(0, unread - 1) });
+      api(`/notifications/${n.id}/read`, { method: "POST" })
+        .then(() => emitBadgesChanged())
+        .catch(() => load());
     }
     // Links are web paths; map the ones the app has a screen for.
     const profile = n.link?.match(/^\/profile\/(\d+)/);

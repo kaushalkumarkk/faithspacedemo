@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { onBadgesChanged } from "@/lib/badges";
 import { Theme } from "@/lib/theme";
 
 export default function TabsLayout() {
@@ -32,9 +33,15 @@ export default function TabsLayout() {
     };
     poll();
     const id = setInterval(poll, 5000);
+    const off = onBadgesChanged((patch) => {
+      if (patch?.alerts !== undefined) setUnreadAlerts(patch.alerts);
+      if (patch?.messages !== undefined) setUnreadMsgs(patch.messages);
+      poll();
+    });
     return () => {
       alive = false;
       clearInterval(id);
+      off();
     };
   }, [user]);
 

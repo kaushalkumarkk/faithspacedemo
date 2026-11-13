@@ -17,6 +17,7 @@ import {
 import { GradientAvatar, hapticLight, hapticSuccess } from "@/components/ui";
 import { api, timeAgo, type Message, type User } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { emitBadgesChanged } from "@/lib/badges";
 import { Theme } from "@/lib/theme";
 
 const CHAT_REPORT_REASONS = ["Harassment", "Spam", "Inappropriate message", "Safety concern"];
@@ -27,6 +28,7 @@ export default function ChatScreen() {
   const { user: me } = useAuth();
   const router = useRouter();
   const listRef = useRef<FlatList<Message>>(null);
+  const badgeSynced = useRef(false);
 
   const [other, setOther] = useState<User | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -42,6 +44,11 @@ export default function ChatScreen() {
       ]);
       setOther(u);
       setMessages(thread);
+      // Fetching the thread marks incoming messages as read: refresh the Messages tab badge.
+      if (!badgeSynced.current) {
+        badgeSynced.current = true;
+        emitBadgesChanged();
+      }
     } catch {}
   }, [otherId]);
 
